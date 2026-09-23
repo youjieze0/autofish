@@ -10,6 +10,8 @@ importClass(java.io.ByteArrayOutputStream);
 importClass(android.view.View); 
 importClass(android.view.MotionEvent);
 
+ui.statusBarColor("#FEF7FF");
+
 var CONFIG = {
     workDir:      "/sdcard/AutoFish",   
     pollMs:       100,      
@@ -22,96 +24,116 @@ var isListening = false;
 var screenCaptureReady = false;             
 
 ui.layout(
-    <frame w="*" h="*">
-        <vertical id="mainPage" padding="24" bg="#FAFAFA" w="*" h="*">
-            <text text="🎣 自动钓鱼" textSize="26sp" textColor="#333333" gravity="center" margin="8" />
-            <text text="逻辑：红线消失(秒提) → 延迟10秒 → 抛竿 → 放大" textSize="12sp" textColor="#999999" gravity="center" margin="8" />
+    <frame w="*" h="*" bg="#FEF7FF">
+        <vertical id="mainPage" padding="24" w="*" h="*">
+            <text text="自动钓鱼" textSize="30sp" textColor="#1D192B" textStyle="bold" gravity="center" marginTop="16" />
+            <text text="红线秒提 · 10秒延迟 · 智能防封" textSize="14sp" textColor="#49454F" gravity="center" marginTop="8" marginBottom="32" />
             
-            <button id="btnPickFish" text="① 选定钓鱼键" w="*" h="50dp" textSize="18sp" textColor="#ffffff" bg="#4A90D9" margin="8" />
-            <button id="btnPickMag" text="② 选定放大键" w="*" h="50dp" textSize="18sp" textColor="#ffffff" bg="#7E57C2" margin="8" />
-            <button id="btnPickLine" text="③ 框选红线区域" w="*" h="50dp" textSize="18sp" textColor="#ffffff" bg="#F5A623" margin="8" />
-            <button id="btnStart" text="④ 开启悬浮窗" w="*" h="60dp" textSize="20sp" textColor="#ffffff" bg="#E53935" margin="8" />
+            <card id="cardFish" w="*" h="64dp" margin="8" cardCornerRadius="20dp" cardElevation="0dp" cardBackgroundColor="#E8DEF8" foreground="?selectableItemBackground">
+                <text id="btnPickFish" text="① 选定钓鱼键" textSize="18sp" textColor="#1D192B" textStyle="bold" gravity="center" w="*" h="*" />
+            </card>
             
-            <text id="txtStatus" text="正在检查状态..." textSize="15sp" textColor="#E53935" gravity="center" margin="16" />
+            <card id="cardMag" w="*" h="64dp" margin="8" cardCornerRadius="20dp" cardElevation="0dp" cardBackgroundColor="#E8DEF8" foreground="?selectableItemBackground">
+                <text id="btnPickMag" text="② 选定放大键" textSize="18sp" textColor="#1D192B" textStyle="bold" gravity="center" w="*" h="*" />
+            </card>
+            
+            <card id="cardLine" w="*" h="64dp" margin="8" cardCornerRadius="20dp" cardElevation="0dp" cardBackgroundColor="#E8DEF8" foreground="?selectableItemBackground">
+                <text id="btnPickLine" text="③ 框选红线区域" textSize="18sp" textColor="#1D192B" textStyle="bold" gravity="center" w="*" h="*" />
+            </card>
+            
+            <card id="cardStart" w="*" h="72dp" margin="8 32 8 8" cardCornerRadius="24dp" cardElevation="2dp" cardBackgroundColor="#B3261E" foreground="?selectableItemBackground">
+                <text id="btnStart" text="④ 开启悬浮窗" textSize="22sp" textColor="#FFFFFF" textStyle="bold" gravity="center" w="*" h="*" />
+            </card>
+            
+            <text id="txtStatus" text="正在检查状态..." textSize="14sp" textColor="#B3261E" textStyle="bold" gravity="center" margin="16" />
         </vertical>
 
         <vertical id="cropPage" bg="#111111" w="*" h="*">
-            <horizontal padding="8" gravity="center_vertical" bg="#111111" h="60dp">
-                <button id="btnCancel" text="取消" textColor="#ffffff" bg="#555555" w="72dp" h="44dp" />
-                <text id="cropTitle" text="请框选区域" textColor="#ffffff" textSize="18sp" gravity="center" layout_weight="1" w="0" />
-                <button id="btnDone" text="完成" textColor="#ffffff" bg="#00C853" w="72dp" h="44dp" />
+            <horizontal padding="8" gravity="center_vertical" bg="#1F1F1F" h="64dp">
+                <card id="btnCancel" w="72dp" h="44dp" cardCornerRadius="12dp" cardBackgroundColor="#49454F" foreground="?selectableItemBackground" margin="8 0">
+                    <text text="取消" textColor="#E6E0E9" textSize="16sp" textStyle="bold" gravity="center" w="*" h="*" />
+                </card>
+                <text id="cropTitle" text="请框选区域" textColor="#E6E0E9" textSize="18sp" textStyle="bold" gravity="center" layout_weight="1" w="0" />
+                <card id="btnDone" w="72dp" h="44dp" cardCornerRadius="12dp" cardBackgroundColor="#6750A4" foreground="?selectableItemBackground" margin="8 0">
+                    <text text="完成" textColor="#FFFFFF" textSize="16sp" textStyle="bold" gravity="center" w="*" h="*" />
+                </card>
             </horizontal>
             <canvas id="cv" w="*" layout_weight="1" h="0" />
-            <text text="操作说明：拖动方框中心移动 · 拖动四个角缩放" textColor="#888888" gravity="center" h="40dp" w="*" />
+            <text text="拖动中心移动 · 拖动四角缩放" textColor="#CAC4D0" textSize="14sp" gravity="center" h="48dp" w="*" />
         </vertical>
     </frame>
 );
 
-ui.run(function(){ ui.cropPage.setVisibility(View.GONE); });
+ui.run(function(){ 
+    try { if (activity.getActionBar()) activity.getActionBar().hide(); } catch(e) {}
+    try { if (activity.getSupportActionBar && activity.getSupportActionBar()) activity.getSupportActionBar().hide(); } catch(e) {}
+    try { activity.getWindow().getDecorView().setSystemUiVisibility(View.SYSTEM_UI_FLAG_LIGHT_STATUS_BAR); } catch(e) {}
+    ui.cropPage.setVisibility(View.GONE); 
+});
 
 function refreshMainUI() {
-    var fx = storage.get("fishX");
-    var mx = storage.get("magX");
-    var region = storage.get("lineRegion");
-
+    var fx = storage.get("fishX"), mx = storage.get("magX"), region = storage.get("lineRegion");
     var missing = [];
     if (fx == null) missing.push("① 钓鱼键未选定");
     if (mx == null) missing.push("② 放大键未选定");
-    if (region == null) missing.push("③ 红线区域未框选");
+    if (region == null) missing.push("③ 红线区域未选定");
 
     ui.run(function () {
-        ui.btnPickFish.setText(fx != null ? "✅ ① 已选定钓鱼键" : "① 选定钓鱼键");
-        ui.btnPickFish.setBackgroundColor(Color.parseColor(fx != null ? "#4CAF50" : "#4A90D9"));
-        ui.btnPickMag.setText(mx != null ? "✅ ② 已选定放大键" : "② 选定放大键");
-        ui.btnPickMag.setBackgroundColor(Color.parseColor(mx != null ? "#4CAF50" : "#7E57C2"));
-        ui.btnPickLine.setText(region != null ? "✅ ③ 已框选红线" : "③ 框选红线区域");
-        ui.btnPickLine.setBackgroundColor(Color.parseColor(region != null ? "#4CAF50" : "#F5A623"));
+        ui.cardFish.setCardBackgroundColor(Color.parseColor(fx != null ? "#D0BCFF" : "#E8DEF8"));
+        ui.btnPickFish.setText(fx != null ? "① 已选定钓鱼键" : "① 选定钓鱼键");
+        ui.btnPickFish.setTextColor(Color.parseColor(fx != null ? "#381E72" : "#1D192B"));
+
+        ui.cardMag.setCardBackgroundColor(Color.parseColor(mx != null ? "#D0BCFF" : "#E8DEF8"));
+        ui.btnPickMag.setText(mx != null ? "② 已选定放大键" : "② 选定放大键");
+        ui.btnPickMag.setTextColor(Color.parseColor(mx != null ? "#381E72" : "#1D192B"));
+
+        ui.cardLine.setCardBackgroundColor(Color.parseColor(region != null ? "#D0BCFF" : "#E8DEF8"));
+        ui.btnPickLine.setText(region != null ? "③ 已框选红线" : "③ 框选红线区域");
+        ui.btnPickLine.setTextColor(Color.parseColor(region != null ? "#381E72" : "#1D192B"));
 
         if (missing.length > 0) {
-            ui.txtStatus.setText("【尚有未完成步骤】\n" + missing.join("\n"));
-            ui.txtStatus.setTextColor(Color.parseColor("#E53935")); 
+            ui.cardStart.setCardBackgroundColor(Color.parseColor("#B3261E"));
+            ui.txtStatus.setText("【尚有未完成步骤】\n" + missing.join(" , "));
+            ui.txtStatus.setTextColor(Color.parseColor("#B3261E")); 
         } else {
-            ui.txtStatus.setText("✅ 所有准备就绪，可以点击开启悬浮窗！");
-            ui.txtStatus.setTextColor(Color.parseColor("#4CAF50")); 
+            ui.cardStart.setCardBackgroundColor(Color.parseColor("#6750A4"));
+            ui.txtStatus.setText("所有准备就绪，可以点击开启悬浮窗！");
+            ui.txtStatus.setTextColor(Color.parseColor("#6750A4")); 
         }
     });
 }
 
-ui.btnPickFish.click(function () { openSelectKey("fishX", "fishY", "请框选【钓鱼按键】"); });
-ui.btnPickMag.click(function () { openSelectKey("magX", "magY", "请框选【放大按键】"); });
-ui.btnPickLine.click(function () { openSelectRegion(); });
-ui.btnStart.click(function () { threads.start(startSystem); });
+ui.cardFish.click(function () { openSelectKey("fishX", "fishY", "请框选【钓鱼按键】"); });
+ui.cardMag.click(function () { openSelectKey("magX", "magY", "请框选【放大按键】"); });
+ui.cardLine.click(function () { openSelectRegion(); });
+ui.cardStart.click(function () { threads.start(startSystem); });
 
 function openSelectKey(storeX, storeY, title) {
     toast("请从相册选择截图，随后完成框选");
-    pickImage(function (imgPath) {
-        if (!imgPath) { toast("未获取到图片"); return; }
-        var srcImg = images.read(imgPath);
-        if (srcImg == null) { toast("图片读取失败"); return; }
-        
-        launchCropPage(srcImg, title, function (rect) {
-            var cx = Math.round(rect.x + rect.w / 2);
-            var cy = Math.round(rect.y + rect.h / 2);
-            storage.put(storeX, cx);
-            storage.put(storeY, cy);
-            toast("✅ 坐标已保存");
-            refreshMainUI();
-        });
-    });
-}
-
-function openSelectRegion() {
-    toast("请选择处于【已放大状态且红线清晰可见】的截图，框选红线");
     pickImage(function (imgPath) {
         if (!imgPath) return;
         var srcImg = images.read(imgPath);
         if (srcImg == null) return;
         
-        launchCropPage(srcImg, "请紧贴框选下沉的【红线区域】", function (rect) {
+        launchCropPage(srcImg, title, function (rect) {
+            var cx = Math.round(rect.x + rect.w / 2), cy = Math.round(rect.y + rect.h / 2);
+            storage.put(storeX, cx); storage.put(storeY, cy);
+            toast("坐标已保存"); refreshMainUI();
+        });
+    });
+}
+
+function openSelectRegion() {
+    toast("请选择已放大的红线截图，紧贴框选红线");
+    pickImage(function (imgPath) {
+        if (!imgPath) return;
+        var srcImg = images.read(imgPath);
+        if (srcImg == null) return;
+        
+        launchCropPage(srcImg, "紧贴框选下沉【红线】", function (rect) {
             var region = [Math.round(rect.x), Math.round(rect.y), Math.round(rect.w), Math.round(rect.h)];
             storage.put("lineRegion", JSON.stringify(region));    
-            toast("✅ 红线区域已保存");
-            refreshMainUI(); 
+            toast("红线区域已保存"); refreshMainUI(); 
         });
     });
 }
@@ -122,12 +144,8 @@ function launchCropPage(img, title, onDone) {
     ui.run(function () {
         cropState.srcImg = img;
         cropState.rect = { x: img.getWidth() * 0.3, y: img.getHeight() * 0.3, w: img.getWidth() * 0.4, h: img.getHeight() * 0.4 };
-        cropState.onDone = onDone;
-        ui.cropTitle.setText(title);
-        
-        ui.mainPage.setVisibility(View.GONE); 
-        ui.cropPage.setVisibility(View.VISIBLE); 
-        ui.cv.invalidate();
+        cropState.onDone = onDone; ui.cropTitle.setText(title);
+        ui.mainPage.setVisibility(View.GONE); ui.cropPage.setVisibility(View.VISIBLE); ui.cv.invalidate();
     });
 }
 
@@ -135,60 +153,44 @@ function closeCropPage() {
     ui.run(function () {
         if (cropState.srcImg) cropState.srcImg.recycle();
         cropState.srcImg = null;
-        ui.cropPage.setVisibility(View.GONE); 
-        ui.mainPage.setVisibility(View.VISIBLE); 
+        ui.cropPage.setVisibility(View.GONE); ui.mainPage.setVisibility(View.VISIBLE); 
     });
 }
 
 ui.btnCancel.click(function () { closeCropPage(); });
 ui.btnDone.click(function () {
     var resultRect = { x: cropState.rect.x, y: cropState.rect.y, w: cropState.rect.w, h: cropState.rect.h };
-    var callback = cropState.onDone;
-    closeCropPage();
-    if (callback) callback(resultRect);
+    var callback = cropState.onDone; closeCropPage(); if (callback) callback(resultRect);
 });
 
 ui.cv.on("draw", function (canvas) {
     try {
         if (!cropState.srcImg) return;
-        var bmp = cropState.srcImg.getBitmap();
-        if (!bmp) return;
-
-        var vw = canvas.getWidth();
-        var vh = canvas.getHeight();
-        if (vw <= 0 || vh <= 0) return;
-
+        var bmp = cropState.srcImg.getBitmap(); if (!bmp) return;
+        var vw = canvas.getWidth(), vh = canvas.getHeight(); if (vw <= 0 || vh <= 0) return;
         var iw = bmp.getWidth(), ih = bmp.getHeight();
         var scale = Math.min(vw / iw, vh / ih);
-        var ox = (vw - iw * scale) / 2;
-        var oy = (vh - ih * scale) / 2;
+        var ox = (vw - iw * scale) / 2, oy = (vh - ih * scale) / 2;
 
-        canvas.drawColor(Color.parseColor("#000000"));
-        
+        canvas.drawColor(Color.parseColor("#1F1F1F"));
         var p = new Paint(); p.setFilterBitmap(true);
-        var dstRect = new RectF(ox, oy, ox + iw * scale, oy + ih * scale);
-        canvas.drawBitmap(bmp, null, dstRect, p);
+        canvas.drawBitmap(bmp, null, new RectF(ox, oy, ox + iw * scale, oy + ih * scale), p);
 
-        var aX = ox + cropState.rect.x * scale;
-        var aY = oy + cropState.rect.y * scale;
-        var bX = ox + (cropState.rect.x + cropState.rect.w) * scale;
-        var bY = oy + (cropState.rect.y + cropState.rect.h) * scale;
+        var aX = ox + cropState.rect.x * scale, aY = oy + cropState.rect.y * scale;
+        var bX = ox + (cropState.rect.x + cropState.rect.w) * scale, bY = oy + (cropState.rect.y + cropState.rect.h) * scale;
         
-        var dim = new Paint(); dim.setColor(Color.parseColor("#AA000000"));
-        canvas.drawRect(new RectF(0, 0, vw, aY), dim); 
-        canvas.drawRect(new RectF(0, bY, vw, vh), dim);
-        canvas.drawRect(new RectF(0, aY, aX, bY), dim); 
-        canvas.drawRect(new RectF(bX, aY, vw, bY), dim);
+        var dim = new Paint(); dim.setColor(Color.parseColor("#C8000000"));
+        canvas.drawRect(new RectF(0, 0, vw, aY), dim); canvas.drawRect(new RectF(0, bY, vw, vh), dim);
+        canvas.drawRect(new RectF(0, aY, aX, bY), dim); canvas.drawRect(new RectF(bX, aY, vw, bY), dim);
 
-        var border = new Paint(); border.setStyle(Paint.Style.STROKE); border.setStrokeWidth(4); border.setColor(Color.parseColor("#FF00E676"));
+        var border = new Paint(); border.setStyle(Paint.Style.STROKE); border.setStrokeWidth(6); border.setColor(Color.parseColor("#D0BCFF"));
         canvas.drawRect(new RectF(aX, aY, bX, bY), border);
         
-        var fill = new Paint(); fill.setColor(Color.parseColor("#FF00E676")); var hs = cropState.handleSize / 2;
+        var fill = new Paint(); fill.setColor(Color.parseColor("#D0BCFF")); var hs = cropState.handleSize / 2;
         canvas.drawRect(new RectF(aX - hs, aY - hs, aX + hs, aY + hs), fill); 
         canvas.drawRect(new RectF(bX - hs, aY - hs, bX + hs, aY + hs), fill);
         canvas.drawRect(new RectF(aX - hs, bY - hs, aX + hs, bY + hs), fill); 
         canvas.drawRect(new RectF(bX - hs, bY - hs, bX + hs, bY + hs), fill);
-
     } catch (e) {}
 });
 
@@ -198,18 +200,12 @@ function near(x, y, cx, cy, tol) { return Math.abs(x - cx) <= tol && Math.abs(y 
 ui.cv.setOnTouchListener(function(view, event) {
     try {
         if (!cropState.srcImg) return true;
-        var vw = view.getWidth(), vh = view.getHeight();
-        if (vw <= 0 || vh <= 0) return true;
-        
+        var vw = view.getWidth(), vh = view.getHeight(); if (vw <= 0 || vh <= 0) return true;
         var iw = cropState.srcImg.getWidth(), ih = cropState.srcImg.getHeight();
         var scale = Math.min(vw / iw, vh / ih);
         var ox = (vw - iw * scale) / 2, oy = (vh - ih * scale) / 2;
-        
-        var x = event.getX(), y = event.getY(), action = event.getAction();
-        var px = (x - ox) / scale, py = (y - oy) / scale; 
-        
+        var px = (event.getX() - ox) / scale, py = (event.getY() - oy) / scale, action = event.getAction(); 
         var r = cropState.rect, tol = cropState.handleSize / scale, snap = { x: r.x, y: r.y, w: r.w, h: r.h };
-        var minW = 20, minH = 20;
 
         if (action == MotionEvent.ACTION_DOWN) {
             if (near(px, py, r.x, r.y, tol)) cropState.drag = { mode: "tl", sx: px, sy: py, r: snap };
@@ -219,174 +215,158 @@ ui.cv.setOnTouchListener(function(view, event) {
             else if (px >= r.x && px <= r.x + r.w && py >= r.y && py <= r.y + r.h) cropState.drag = { mode: "move", sx: px, sy: py, r: snap };
             else cropState.drag = null;
         } else if (action == MotionEvent.ACTION_MOVE && cropState.drag) {
-            var dx = px - cropState.drag.sx, dy = py - cropState.drag.sy, d = cropState.drag;
+            var dx = px - cropState.drag.sx, dy = py - cropState.drag.sy, d = cropState.drag, minW = 20, minH = 20;
             if (d.mode === "move") { r.x = clamp(d.r.x + dx, 0, iw - r.w); r.y = clamp(d.r.y + dy, 0, ih - r.h); } 
             else if (d.mode === "tl") { var nL = clamp(px, 0, d.r.x + d.r.w - minW), nT = clamp(py, 0, d.r.y + d.r.h - minH); r.x = nL; r.y = nT; r.w = d.r.x + d.r.w - nL; r.h = d.r.y + d.r.h - nT; } 
             else if (d.mode === "tr") { var nR = clamp(px, d.r.x + minW, iw), nT2 = clamp(py, 0, d.r.y + d.r.h - minH); r.y = nT2; r.w = nR - d.r.x; r.h = d.r.y + d.r.h - nT2; } 
             else if (d.mode === "bl") { var nL2 = clamp(px, 0, d.r.x + d.r.w - minW), nB = clamp(py, d.r.y + minH, ih); r.x = nL2; r.w = d.r.x + d.r.w - nL2; r.h = nB - d.r.y; } 
             else if (d.mode === "br") { var nR2 = clamp(px, d.r.x + minW, iw), nB2 = clamp(py, d.r.y + minH, ih); r.w = nR2 - d.r.x; r.h = nB2 - d.r.y; }
             ui.cv.invalidate(); 
-        } else if (action == MotionEvent.ACTION_UP) {
-            cropState.drag = null;
-        }
-    } catch (e) {}
-    return true;
+        } else if (action == MotionEvent.ACTION_UP) cropState.drag = null;
+    } catch (e) {} return true;
 });
 
 function checkPermissions() {
-    if (!floaty.checkPermission()) {
-        if (dialogs.confirm("提示", "需要悬浮窗权限，是否前往开启？", "去开启", "取消")) 
-            app.startActivity({ action: "android.settings.action.MANAGE_OVERLAY_PERMISSION", data: "package:" + context.getPackageName() });
-    }
-    if (auto.service == null) {
-        if (dialogs.confirm("提示", "需要无障碍服务权限，请在列表中开启。", "去开启", "取消")) 
-            app.startActivity({ action: "android.settings.ACCESSIBILITY_SETTINGS" });
-    }
-    threads.start(function () { ensureScreenCapture(); });
+    threads.start(function () {
+        if (!floaty.checkPermission()) {
+            if (confirm("权限提示", "需要悬浮窗权限，是否前往开启？")) {
+                try { app.startActivity({ action: "android.settings.action.MANAGE_OVERLAY_PERMISSION", data: "package:" + context.getPackageName() }); } catch (e) {}
+            }
+        }
+        if (auto.service == null) {
+            if (confirm("权限提示", "需要无障碍服务权限，请在列表中开启。")) {
+                try { app.startActivity({ action: "android.settings.ACCESSIBILITY_SETTINGS" }); } catch (e) {}
+            }
+        }
+        ensureScreenCapture();
+    });
 }
 
 function ensureScreenCapture() {
     if (screenCaptureReady) return true;
     var ok = requestScreenCapture(CONFIG.landscape); 
-    if (ok) screenCaptureReady = true;
-    return ok;
+    if (ok) screenCaptureReady = true; return ok;
 }
 
 function pickImage(callback) {
     var reqCode = 1000 + Math.floor(Math.random() * 1000); 
     var handled = false; 
-    var listener = function (requestCode, resultCode, data) {
-        if (requestCode === reqCode && !handled) {
+    var listener = function (req, res, data) {
+        if (req === reqCode && !handled) {
             handled = true; 
-            if (resultCode !== Activity.RESULT_OK || data == null) {
-                callback(null); return;
-            }
-            threads.start(function () {
-                var path = uriToLocalPath(data.getData());
-                ui.run(function () { callback(path); }); 
-            });
+            if (res !== Activity.RESULT_OK || data == null) { callback(null); return; }
+            threads.start(function () { var path = uriToLocalPath(data.getData()); ui.run(function () { callback(path); }); });
         }
     };
     ui.emitter.on("activity_result", listener); 
-    ui.run(function () {
-        var intent = new Intent(Intent.ACTION_PICK, MediaStore.Images.Media.EXTERNAL_CONTENT_URI);
-        activity.startActivityForResult(intent, reqCode);
-    });
+    ui.run(function () { activity.startActivityForResult(new Intent(Intent.ACTION_PICK, MediaStore.Images.Media.EXTERNAL_CONTENT_URI), reqCode); });
 }
 
 function uriToLocalPath(uri) {
     var path = null;
     try {
         var cursor = context.getContentResolver().query(uri, ["_data"], null, null, null);
-        if (cursor != null) {
-            if (cursor.moveToFirst()) { var idx = cursor.getColumnIndex("_data"); if (idx >= 0) path = cursor.getString(idx); }
-            cursor.close();
-        }
+        if (cursor != null) { if (cursor.moveToFirst()) { var idx = cursor.getColumnIndex("_data"); if (idx >= 0) path = cursor.getString(idx); } cursor.close(); }
     } catch (e) { }
     if (path == null || !files.exists(path)) {
         try {
-            files.ensureDir(CONFIG.workDir);
-            path = files.join(CONFIG.workDir, "tmp_" + Date.now() + ".png");
-            var is = context.getContentResolver().openInputStream(uri);
-            files.writeBytes(path, inputStreamToBytes(is));
+            files.ensureDir(CONFIG.workDir); path = files.join(CONFIG.workDir, "tmp_" + Date.now() + ".png");
+            var is = context.getContentResolver().openInputStream(uri); files.writeBytes(path, inputStreamToBytes(is));
         } catch (e) { return null; }
     }
     return path;
 }
-
-function inputStreamToBytes(is) {
-    var baos = new ByteArrayOutputStream(); var buf = java.lang.reflect.Array.newInstance(java.lang.Byte.TYPE, 4096); var n;
-    while ((n = is.read(buf)) !== -1) { baos.write(buf, 0, n); }
-    is.close(); return baos.toByteArray();
-}
-
+function inputStreamToBytes(is) { var baos = new ByteArrayOutputStream(), buf = java.lang.reflect.Array.newInstance(java.lang.Byte.TYPE, 4096), n; while ((n = is.read(buf)) !== -1) { baos.write(buf, 0, n); } is.close(); return baos.toByteArray(); }
 function doClick(x, y) { try { click(x, y); } catch (e) { gesture(80, [x, y]); } }
 
 function countRedPixels(img, region) {
     try {
-        var bitmap = img.getBitmap();
-        var bw = bitmap.getWidth();
-        var bh = bitmap.getHeight();
-        
-        var rx = Math.max(0, region[0]);
-        var ry = Math.max(0, region[1]);
-        var rw = Math.min(region[2], bw - rx);
-        var rh = Math.min(region[3], bh - ry);
+        var bitmap = img.getBitmap(), bw = bitmap.getWidth(), bh = bitmap.getHeight();
+        var rx = Math.max(0, region[0]), ry = Math.max(0, region[1]), rw = Math.min(region[2], bw - rx), rh = Math.min(region[3], bh - ry);
         if (rw <= 0 || rh <= 0) return 0;
-
         var pixels = java.lang.reflect.Array.newInstance(java.lang.Integer.TYPE, rw * rh);
         bitmap.getPixels(pixels, 0, rw, rx, ry, rw, rh);
-        
         var count = 0;
         for (var i = 0; i < pixels.length; i++) {
-            var c = pixels[i];
-            var r = (c >> 16) & 0xff;
-            var g = (c >> 8) & 0xff;
-            var b = c & 0xff;
-            
-            if (r > 80 && r > g * 1.2 && r > b * 1.2) {
-                count++;
-            }
+            var c = pixels[i], r = (c >> 16) & 0xff, g = (c >> 8) & 0xff, b = c & 0xff;
+            if (r > 80 && r > g * 1.2 && r > b * 1.2) count++;
         }
         return count;
-    } catch(e) {
-        return 0;
-    }
+    } catch(e) { return 0; }
 }
 
 function startSystem() {
-    var fx = storage.get("fishX"), fy = storage.get("fishY");
-    var mx = storage.get("magX"), my = storage.get("magY");
-    var rawReg = storage.get("lineRegion");
-    
-    if (fx == null || mx == null || rawReg == null) { toast("请先完成前面的框选配置"); return; }
+    var fx = storage.get("fishX"), fy = storage.get("fishY"), mx = storage.get("magX"), my = storage.get("magY"), rawReg = storage.get("lineRegion");
+    if (fx == null || mx == null || rawReg == null) { toast("请先完成前面的配置"); return; }
     if (!ensureScreenCapture()) { toast("屏幕截取权限获取失败"); return; }
 
     var region = JSON.parse(rawReg);
-
     ui.run(function () {
-        home();
-        serviceAlive = true;
-        isListening = false; 
+        home(); serviceAlive = true; isListening = false; 
         launchFloatAndLoop(fx, fy, mx, my, region);
     });
 }
 
 function launchFloatAndLoop(fx, fy, mx, my, region) {
     var floatWin = floaty.window(
-        <vertical bg="#50000000" padding="4" w="88dp">
-            <button id="toggleStatus" text="▶ 开启检测" textSize="14sp" textColor="#ffffff" bg="#4CAF50" h="40dp" />
-            <button id="stop" text="⏹ 彻底退出" textSize="12sp" textColor="#ffffff" bg="#E53935" h="32dp" />
-        </vertical>
+        <frame id="floatRoot" w="wrap_content" h="wrap_content">
+            <card id="floatBg" w="wrap_content" h="wrap_content" cardCornerRadius="20dp" cardElevation="4dp" cardBackgroundColor="#F3EDF7" alpha="1.0">
+                <vertical padding="10">
+                    <card id="btnToggle" w="96dp" h="44dp" cardCornerRadius="14dp" cardElevation="0dp" cardBackgroundColor="#6750A4" margin="0 0 0 10" foreground="?selectableItemBackground">
+                        <text id="txtToggle" text="开启检测" textSize="15sp" textColor="#FFFFFF" textStyle="bold" gravity="center" w="*" h="*" />
+                    </card>
+                    <card id="btnStop" w="96dp" h="36dp" cardCornerRadius="12dp" cardElevation="0dp" cardBackgroundColor="#B3261E" foreground="?selectableItemBackground">
+                        <text text="彻底退出" textSize="13sp" textColor="#FFFFFF" textStyle="bold" gravity="center" w="*" h="*" />
+                    </card>
+                </vertical>
+            </card>
+        </frame>
     );
-    floatWin.setPosition(30, 400);   
+
+    setTimeout(function() {
+        try { floatWin.setPosition(30, 400); } catch(e) {}
+    }, 300);
     
     var state = "WAIT_BITE"; 
+    
+    var alphaTimer = null;
+    function wakeUpFloat() {
+        ui.run(function(){ floatWin.floatBg.setAlpha(1.0); }); 
+        if(alphaTimer) clearTimeout(alphaTimer);
+        alphaTimer = setTimeout(function(){
+            ui.run(function(){ floatWin.floatBg.setAlpha(0.4); }); 
+        }, 3000);
+    }
+    wakeUpFloat();
 
-    floatWin.toggleStatus.click(function () {
+    floatWin.floatRoot.setOnTouchListener(function(view, event) {
+        wakeUpFloat();
+        return false; 
+    });
+
+    floatWin.btnToggle.click(function () {
+        wakeUpFloat();
         if(isListening) {
             isListening = false;
             ui.run(function(){
-                floatWin.toggleStatus.setText("▶ 开启检测");
-                floatWin.toggleStatus.setBackgroundColor(Color.parseColor("#4CAF50"));
+                floatWin.txtToggle.setText("开启检测");
+                floatWin.btnToggle.setCardBackgroundColor(Color.parseColor("#6750A4")); 
             });
             toast("检测已暂停");
         } else {
             isListening = true;
             state = "WAIT_BITE"; 
             ui.run(function(){
-                floatWin.toggleStatus.setText("👀 守望红线...");
-                floatWin.toggleStatus.setBackgroundColor(Color.parseColor("#F5A623"));
+                floatWin.txtToggle.setText("守望红线...");
+                floatWin.btnToggle.setCardBackgroundColor(Color.parseColor("#825500")); 
             });
-            toast("请确保画面中已有红线，开始检测下沉...");
+            toast("请确保画面中已有红线，开始检测...");
         }
     });
 
-    floatWin.stop.click(function () {
-        serviceAlive = false;
-        isListening = false;             
-        floatWin.close();
-        toast("脚本已退出");
+    floatWin.btnStop.click(function () {
+        serviceAlive = false; isListening = false;             
+        floatWin.close(); toast("脚本已退出");
     });
 
     threads.start(function () {
@@ -408,31 +388,34 @@ function launchFloatAndLoop(fx, fy, mx, my, region) {
                         if (confirmCount >= 2) {
                             isListening = false; 
                             ui.run(function(){
-                                floatWin.toggleStatus.setText("⚙️ 自动化流...");
-                                floatWin.toggleStatus.setBackgroundColor(Color.parseColor("#E53935"));
+                                wakeUpFloat(); 
+                                floatWin.txtToggle.setText("收杆中...");
+                                floatWin.btnToggle.setCardBackgroundColor(Color.parseColor("#BA1A1A")); 
                             });
 
                             doClick(fx, fy);  
-                            
-                            sleep(10000);
-                            
+                            sleep(10000);     
                             doClick(fx, fy);  
-                            
                             sleep(1000);
                             doClick(mx, my);  
+                            
+                            sleep(1000);
+                            var dm = context.getResources().getDisplayMetrics();
+                            var cx = dm.widthPixels / 2;
+                            var cy = dm.heightPixels / 2;
+                            try { swipe(cx, cy, cx + 200, cy, 300); } catch(e) {}
                             
                             state = "WAIT_LINE";
                             confirmCount = 0;
                             isListening = true;
                             
                             ui.run(function(){
-                                floatWin.toggleStatus.setText("🔎 等红线刷新");
-                                floatWin.toggleStatus.setBackgroundColor(Color.parseColor("#7E57C2"));
+                                wakeUpFloat();
+                                floatWin.txtToggle.setText("等待刷新");
+                                floatWin.btnToggle.setCardBackgroundColor(Color.parseColor("#4A4458")); 
                             });
                         }
-                    } else { 
-                        confirmCount = 0; 
-                    }
+                    } else { confirmCount = 0; }
                 } 
                 else if (state === "WAIT_LINE") {
                     if (redCount >= 5) {
@@ -440,15 +423,13 @@ function launchFloatAndLoop(fx, fy, mx, my, region) {
                         if (confirmCount >= 2) {
                             state = "WAIT_BITE";
                             confirmCount = 0;
-                            
                             ui.run(function(){
-                                floatWin.toggleStatus.setText("👀 守望红线...");
-                                floatWin.toggleStatus.setBackgroundColor(Color.parseColor("#F5A623"));
+                                wakeUpFloat();
+                                floatWin.txtToggle.setText("守望红线...");
+                                floatWin.btnToggle.setCardBackgroundColor(Color.parseColor("#825500"));
                             });
                         }
-                    } else {
-                        confirmCount = 0;
-                    }
+                    } else { confirmCount = 0; }
                 }
             } catch (e) {}
             sleep(CONFIG.pollMs);
@@ -457,6 +438,5 @@ function launchFloatAndLoop(fx, fy, mx, my, region) {
 }
 
 events.on("exit", function () { serviceAlive = false; isListening = false; });
-
 refreshMainUI(); 
-setTimeout(checkPermissions, 300);
+checkPermissions();
