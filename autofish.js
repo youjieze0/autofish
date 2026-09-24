@@ -1,6 +1,7 @@
 "ui";
 
 importClass(android.content.Intent);
+importClass(android.content.Context);
 importClass(android.app.Activity);
 importClass(android.provider.MediaStore);
 importClass(android.graphics.Paint);
@@ -9,6 +10,9 @@ importClass(android.graphics.RectF);
 importClass(java.io.ByteArrayOutputStream);
 importClass(android.view.View); 
 importClass(android.view.MotionEvent);
+importClass(android.app.ActivityManager);
+importClass(android.view.animation.DecelerateInterpolator);
+importClass(android.graphics.drawable.GradientDrawable);
 
 ui.statusBarColor("#FEF7FF");
 
@@ -24,29 +28,63 @@ var isListening = false;
 var screenCaptureReady = false;             
 
 ui.layout(
-    <frame w="*" h="*" bg="#FEF7FF">
-        <vertical id="mainPage" padding="24" w="*" h="*">
-            <text text="自动钓鱼" textSize="30sp" textColor="#1D192B" textStyle="bold" gravity="center" marginTop="16" />
-            <text text="红线秒提 · 10秒延迟 · 智能防封" textSize="14sp" textColor="#49454F" gravity="center" marginTop="8" marginBottom="32" />
+    <frame bg="#FEF7FF" w="*" h="*">
+        
+        <viewpager id="viewPager" w="*" h="*">
+            <vertical id="mainPage" padding="24" w="*" h="*">
+                <text text="自动钓鱼" textSize="30sp" textColor="#1D192B" textStyle="bold" gravity="center" marginTop="16" />
+                <text text="红线秒提 · 10秒延迟 · 智能防封" textSize="14sp" textColor="#49454F" gravity="center" marginTop="8" marginBottom="32" />
+                
+                <card id="cardFish" w="*" h="64dp" margin="8" cardCornerRadius="20dp" cardElevation="0dp" cardBackgroundColor="#E8DEF8" foreground="?selectableItemBackground">
+                    <text id="btnPickFish" text="① 选定钓鱼键" textSize="18sp" textColor="#1D192B" textStyle="bold" gravity="center" w="*" h="*" />
+                </card>
+                
+                <card id="cardMag" w="*" h="64dp" margin="8" cardCornerRadius="20dp" cardElevation="0dp" cardBackgroundColor="#E8DEF8" foreground="?selectableItemBackground">
+                    <text id="btnPickMag" text="② 选定放大键" textSize="18sp" textColor="#1D192B" textStyle="bold" gravity="center" w="*" h="*" />
+                </card>
+                
+                <card id="cardLine" w="*" h="64dp" margin="8" cardCornerRadius="20dp" cardElevation="0dp" cardBackgroundColor="#E8DEF8" foreground="?selectableItemBackground">
+                    <text id="btnPickLine" text="③ 框选红线区域" textSize="18sp" textColor="#1D192B" textStyle="bold" gravity="center" w="*" h="*" />
+                </card>
+                
+                <card id="cardStart" w="*" h="72dp" margin="8 32 8 8" cardCornerRadius="24dp" cardElevation="2dp" cardBackgroundColor="#B3261E" foreground="?selectableItemBackground">
+                    <text id="btnStart" text="④ 开启悬浮窗" textSize="22sp" textColor="#FFFFFF" textStyle="bold" gravity="center" w="*" h="*" />
+                </card>
+                
+                <text id="txtStatus" text="正在检查状态..." textSize="14sp" textColor="#B3261E" textStyle="bold" gravity="center" margin="16" />
+            </vertical>
             
-            <card id="cardFish" w="*" h="64dp" margin="8" cardCornerRadius="20dp" cardElevation="0dp" cardBackgroundColor="#E8DEF8" foreground="?selectableItemBackground">
-                <text id="btnPickFish" text="① 选定钓鱼键" textSize="18sp" textColor="#1D192B" textStyle="bold" gravity="center" w="*" h="*" />
-            </card>
-            
-            <card id="cardMag" w="*" h="64dp" margin="8" cardCornerRadius="20dp" cardElevation="0dp" cardBackgroundColor="#E8DEF8" foreground="?selectableItemBackground">
-                <text id="btnPickMag" text="② 选定放大键" textSize="18sp" textColor="#1D192B" textStyle="bold" gravity="center" w="*" h="*" />
-            </card>
-            
-            <card id="cardLine" w="*" h="64dp" margin="8" cardCornerRadius="20dp" cardElevation="0dp" cardBackgroundColor="#E8DEF8" foreground="?selectableItemBackground">
-                <text id="btnPickLine" text="③ 框选红线区域" textSize="18sp" textColor="#1D192B" textStyle="bold" gravity="center" w="*" h="*" />
-            </card>
-            
-            <card id="cardStart" w="*" h="72dp" margin="8 32 8 8" cardCornerRadius="24dp" cardElevation="2dp" cardBackgroundColor="#B3261E" foreground="?selectableItemBackground">
-                <text id="btnStart" text="④ 开启悬浮窗" textSize="22sp" textColor="#FFFFFF" textStyle="bold" gravity="center" w="*" h="*" />
-            </card>
-            
-            <text id="txtStatus" text="正在检查状态..." textSize="14sp" textColor="#B3261E" textStyle="bold" gravity="center" margin="16" />
-        </vertical>
+            <frame id="pageSettings" w="*" h="*">
+                <vertical padding="24" w="*" h="*">
+                    <text text="设置" textSize="30sp" textColor="#1D192B" textStyle="bold" marginTop="16" marginBottom="24" />
+                    
+                    <card w="*" h="wrap_content" margin="8" cardCornerRadius="16dp" cardElevation="0dp" cardBackgroundColor="#F3EDF7">
+                        <horizontal padding="16 20" gravity="center_vertical" w="*" h="wrap_content">
+                            <vertical layout_weight="1">
+                                <text text="隐藏后台任务" textSize="18sp" textColor="#1D192B" textStyle="bold" />
+                                <text text="开启后在最近任务列表中不显示本应用" textSize="12sp" textColor="#49454F" marginTop="0" />
+                            </vertical>
+                            <Switch id="switchHideTask" checked="false" />
+                        </horizontal>
+                    </card>
+                </vertical>
+            </frame>
+        </viewpager>
+
+        <card id="bottomNav" w="wrap_content" h="64dp" cardElevation="6dp" cardBackgroundColor="#F3EDF7" cardCornerRadius="32dp" layout_gravity="bottom|center_horizontal" marginBottom="24">
+            <frame w="wrap_content" h="wrap_content" layout_gravity="center" padding="8 0">
+                <frame id="navIndicator" w="100dp" h="48dp" layout_gravity="center_vertical|left" />
+                
+                <horizontal w="wrap_content" h="wrap_content" gravity="center">
+                    <frame id="tabHomeWrap" w="100dp" h="48dp">
+                        <text id="txtTabHome" text="主页" textSize="16sp" textColor="#1D192B" textStyle="bold" gravity="center" w="*" h="*" />
+                    </frame>
+                    <frame id="tabSettingsWrap" w="100dp" h="48dp" marginLeft="4">
+                        <text id="txtTabSettings" text="设置" textSize="16sp" textColor="#49454F" textStyle="normal" gravity="center" w="*" h="*" />
+                    </frame>
+                </horizontal>
+            </frame>
+        </card>
 
         <vertical id="cropPage" bg="#111111" w="*" h="*">
             <horizontal padding="8" gravity="center_vertical" bg="#1F1F1F" h="64dp">
@@ -61,14 +99,98 @@ ui.layout(
             <canvas id="cv" w="*" layout_weight="1" h="0" />
             <text text="拖动中心移动 · 拖动四角缩放" textColor="#CAC4D0" textSize="14sp" gravity="center" h="48dp" w="*" />
         </vertical>
+
     </frame>
 );
 
+var density = context.getResources().getDisplayMetrics().density;
+var moveDistPx = 104 * density;
+
 ui.run(function(){ 
+    var indicatorBg = new GradientDrawable();
+    indicatorBg.setShape(GradientDrawable.RECTANGLE);
+    indicatorBg.setCornerRadius(24 * density);
+    indicatorBg.setColor(Color.parseColor("#E8DEF8"));
+    ui.navIndicator.setBackground(indicatorBg);
+
     try { if (activity.getActionBar()) activity.getActionBar().hide(); } catch(e) {}
     try { if (activity.getSupportActionBar && activity.getSupportActionBar()) activity.getSupportActionBar().hide(); } catch(e) {}
     try { activity.getWindow().getDecorView().setSystemUiVisibility(View.SYSTEM_UI_FLAG_LIGHT_STATUS_BAR); } catch(e) {}
+    
+    try {
+        var tbId = context.getResources().getIdentifier("toolbar", "id", context.getPackageName());
+        if (tbId != 0) {
+            var tb = activity.findViewById(tbId);
+            if (tb) tb.setVisibility(View.GONE);
+        }
+        var abId = context.getResources().getIdentifier("appbar", "id", context.getPackageName());
+        if (abId != 0) {
+            var ab = activity.findViewById(abId);
+            if (ab) ab.setVisibility(View.GONE);
+        }
+        var actionId = context.getResources().getIdentifier("action_bar", "id", context.getPackageName());
+        if (actionId != 0) {
+            var ac = activity.findViewById(actionId);
+            if (ac) ac.setVisibility(View.GONE);
+        }
+    } catch(e) {}
+
     ui.cropPage.setVisibility(View.GONE); 
+    
+    var hideSaved = storage.get("hideTask", false);
+    ui.switchHideTask.setChecked(hideSaved);
+    
+    try {
+        var am = context.getSystemService(Context.ACTIVITY_SERVICE);
+        var tasks = am.getAppTasks();
+        if (tasks != null && tasks.size() > 0) {
+            tasks.get(0).setExcludeFromRecents(hideSaved);
+        }
+    } catch(e) {}
+});
+
+ui.switchHideTask.setOnCheckedChangeListener(function(view, isChecked) {
+    storage.put("hideTask", isChecked);
+    try {
+        var am = context.getSystemService(Context.ACTIVITY_SERVICE);
+        var tasks = am.getAppTasks();
+        if (tasks != null && tasks.size() > 0) {
+            tasks.get(0).setExcludeFromRecents(isChecked);
+        }
+    } catch(e) {}
+});
+
+ui.tabHomeWrap.click(function() {
+    ui.viewPager.setCurrentItem(0, true);
+});
+
+ui.tabSettingsWrap.click(function() {
+    ui.viewPager.setCurrentItem(1, true);
+});
+
+ui.viewPager.setOnPageChangeListener({
+    onPageSelected: function(index) {
+        var targetX = (index == 0) ? 0 : moveDistPx;
+        ui.run(function() {
+            ui.navIndicator.animate()
+                .translationX(targetX)
+                .setDuration(300)
+                .setInterpolator(new DecelerateInterpolator(1.5))
+                .start();
+
+            if (index == 0) {
+                ui.txtTabHome.setTextColor(Color.parseColor("#1D192B"));
+                ui.txtTabHome.setTypeface(null, android.graphics.Typeface.BOLD);
+                ui.txtTabSettings.setTextColor(Color.parseColor("#49454F"));
+                ui.txtTabSettings.setTypeface(null, android.graphics.Typeface.NORMAL);
+            } else {
+                ui.txtTabHome.setTextColor(Color.parseColor("#49454F"));
+                ui.txtTabHome.setTypeface(null, android.graphics.Typeface.NORMAL);
+                ui.txtTabSettings.setTextColor(Color.parseColor("#1D192B"));
+                ui.txtTabSettings.setTypeface(null, android.graphics.Typeface.BOLD);
+            }
+        });
+    }
 });
 
 function refreshMainUI() {
@@ -106,7 +228,9 @@ function refreshMainUI() {
 ui.cardFish.click(function () { openSelectKey("fishX", "fishY", "请框选【钓鱼按键】"); });
 ui.cardMag.click(function () { openSelectKey("magX", "magY", "请框选【放大按键】"); });
 ui.cardLine.click(function () { openSelectRegion(); });
-ui.cardStart.click(function () { threads.start(startSystem); });
+ui.cardStart.click(function () { 
+    threads.start(startSystem); 
+});
 
 function openSelectKey(storeX, storeY, title) {
     toast("请从相册选择截图，随后完成框选");
@@ -145,7 +269,11 @@ function launchCropPage(img, title, onDone) {
         cropState.srcImg = img;
         cropState.rect = { x: img.getWidth() * 0.3, y: img.getHeight() * 0.3, w: img.getWidth() * 0.4, h: img.getHeight() * 0.4 };
         cropState.onDone = onDone; ui.cropTitle.setText(title);
-        ui.mainPage.setVisibility(View.GONE); ui.cropPage.setVisibility(View.VISIBLE); ui.cv.invalidate();
+        
+        ui.viewPager.setVisibility(View.GONE); 
+        ui.bottomNav.setVisibility(View.GONE);
+        ui.cropPage.setVisibility(View.VISIBLE); 
+        ui.cv.invalidate();
     });
 }
 
@@ -153,7 +281,10 @@ function closeCropPage() {
     ui.run(function () {
         if (cropState.srcImg) cropState.srcImg.recycle();
         cropState.srcImg = null;
-        ui.cropPage.setVisibility(View.GONE); ui.mainPage.setVisibility(View.VISIBLE); 
+        
+        ui.cropPage.setVisibility(View.GONE); 
+        ui.viewPager.setVisibility(View.VISIBLE); 
+        ui.bottomNav.setVisibility(View.VISIBLE);
     });
 }
 
@@ -302,7 +433,8 @@ function startSystem() {
 
     var region = JSON.parse(rawReg);
     ui.run(function () {
-        home(); serviceAlive = true; isListening = false; 
+        home();
+        serviceAlive = true; isListening = false; 
         launchFloatAndLoop(fx, fy, mx, my, region);
     });
 }
