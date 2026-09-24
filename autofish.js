@@ -33,7 +33,7 @@ ui.layout(
         <viewpager id="viewPager" w="*" h="*">
             <vertical id="mainPage" padding="24" w="*" h="*">
                 <text text="自动钓鱼" textSize="30sp" textColor="#1D192B" textStyle="bold" gravity="center" marginTop="16" />
-                <text text="红线秒提 · 10秒延迟 · 智能防封" textSize="14sp" textColor="#49454F" gravity="center" marginTop="8" marginBottom="32" />
+                <text text="红线秒提 · 自定义延迟 · 智能防封" textSize="14sp" textColor="#49454F" gravity="center" marginTop="8" marginBottom="32" />
                 
                 <card id="cardFish" w="*" h="64dp" margin="8" cardCornerRadius="20dp" cardElevation="0dp" cardBackgroundColor="#E8DEF8" foreground="?selectableItemBackground">
                     <text id="btnPickFish" text="① 选定钓鱼键" textSize="18sp" textColor="#1D192B" textStyle="bold" gravity="center" w="*" h="*" />
@@ -67,6 +67,17 @@ ui.layout(
                             <Switch id="switchHideTask" checked="false" />
                         </horizontal>
                     </card>
+
+                    <card w="*" h="wrap_content" margin="8 16 8 8" cardCornerRadius="16dp" cardElevation="0dp" cardBackgroundColor="#F3EDF7">
+                        <vertical padding="16 20">
+                            <text text="收杆后抛竿延迟" textSize="18sp" textColor="#1D192B" textStyle="bold" />
+                            <text text="提竿后等待动画播放完毕再抛竿的时间 (毫秒)" textSize="12sp" textColor="#49454F" marginTop="0" marginBottom="12" />
+                            <card w="*" h="wrap_content" cardCornerRadius="12dp" cardElevation="0dp" cardBackgroundColor="#E8DEF8">
+                                <input id="inputDelay" inputType="number" text="10000" textSize="16sp" textColor="#1D192B" bg="#00000000" padding="16 12" />
+                            </card>
+                        </vertical>
+                    </card>
+
                 </vertical>
             </frame>
         </viewpager>
@@ -139,6 +150,9 @@ ui.run(function(){
     
     var hideSaved = storage.get("hideTask", false);
     ui.switchHideTask.setChecked(hideSaved);
+
+    var delaySaved = storage.get("fishDelay", 10000);
+    ui.inputDelay.setText(String(delaySaved));
     
     try {
         var am = context.getSystemService(Context.ACTIVITY_SERVICE);
@@ -158,6 +172,17 @@ ui.switchHideTask.setOnCheckedChangeListener(function(view, isChecked) {
             tasks.get(0).setExcludeFromRecents(isChecked);
         }
     } catch(e) {}
+});
+
+ui.inputDelay.addTextChangedListener({
+    afterTextChanged: function(s) {
+        try {
+            var val = parseInt(s.toString());
+            if (!isNaN(val) && val >= 0) {
+                storage.put("fishDelay", val);
+            }
+        } catch(e) {}
+    }
 });
 
 ui.tabHomeWrap.click(function() {
@@ -526,7 +551,10 @@ function launchFloatAndLoop(fx, fy, mx, my, region) {
                             });
 
                             doClick(fx, fy);  
-                            sleep(10000);     
+                            
+                            var waitDelay = storage.get("fishDelay", 10000);
+                            sleep(waitDelay);     
+                            
                             doClick(fx, fy);  
                             sleep(1000);
                             doClick(mx, my);  
