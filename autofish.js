@@ -64,7 +64,12 @@ ui.layout(
                                 <text text="隐藏后台任务" textSize="18sp" textColor="#1D192B" textStyle="bold" />
                                 <text text="开启后在最近任务列表中不显示本应用" textSize="12sp" textColor="#49454F" marginTop="0" />
                             </vertical>
-                            <Switch id="switchHideTask" checked="false" />
+                            
+                            <frame id="customSwitch" w="52dp" h="32dp" clickable="true">
+                                <card id="switchTrack" w="52dp" h="32dp" cardCornerRadius="16dp" cardElevation="0dp" cardBackgroundColor="#E6E0E9" />
+                                <card id="switchThumb" w="24dp" h="24dp" cardCornerRadius="12dp" cardElevation="0dp" cardBackgroundColor="#79747E" layout_gravity="center_vertical|left" marginLeft="4" />
+                            </frame>
+
                         </horizontal>
                     </card>
 
@@ -116,6 +121,23 @@ ui.layout(
 
 var density = context.getResources().getDisplayMetrics().density;
 var moveDistPx = 104 * density;
+var switchMovePx = 20 * density;
+
+function updateSwitchUI(isOn, animate) {
+    var targetX = isOn ? switchMovePx : 0;
+    var trackColor = isOn ? "#6750A4" : "#E6E0E9";
+    var thumbColor = isOn ? "#FFFFFF" : "#79747E";
+    
+    ui.run(function(){
+        if (animate) {
+            ui.switchThumb.animate().translationX(targetX).setDuration(200).setInterpolator(new DecelerateInterpolator()).start();
+        } else {
+            ui.switchThumb.setTranslationX(targetX);
+        }
+        ui.switchTrack.setCardBackgroundColor(Color.parseColor(trackColor));
+        ui.switchThumb.setCardBackgroundColor(Color.parseColor(thumbColor));
+    });
+}
 
 ui.run(function(){ 
     var indicatorBg = new GradientDrawable();
@@ -149,7 +171,7 @@ ui.run(function(){
     ui.cropPage.setVisibility(View.GONE); 
     
     var hideSaved = storage.get("hideTask", false);
-    ui.switchHideTask.setChecked(hideSaved);
+    updateSwitchUI(hideSaved, false);
 
     var delaySaved = storage.get("fishDelay", 10000);
     ui.inputDelay.setText(String(delaySaved));
@@ -163,13 +185,17 @@ ui.run(function(){
     } catch(e) {}
 });
 
-ui.switchHideTask.setOnCheckedChangeListener(function(view, isChecked) {
-    storage.put("hideTask", isChecked);
+ui.customSwitch.click(function() {
+    var current = storage.get("hideTask", false);
+    var nextState = !current;
+    storage.put("hideTask", nextState);
+    updateSwitchUI(nextState, true);
+    
     try {
         var am = context.getSystemService(Context.ACTIVITY_SERVICE);
         var tasks = am.getAppTasks();
         if (tasks != null && tasks.size() > 0) {
-            tasks.get(0).setExcludeFromRecents(isChecked);
+            tasks.get(0).setExcludeFromRecents(nextState);
         }
     } catch(e) {}
 });
