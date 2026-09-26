@@ -131,7 +131,7 @@ ui.layout(
                     <card id="cardSens" w="*" h="wrap_content" margin="8 0 8 8" cardCornerRadius="16dp" cardElevation="0dp">
                         <vertical padding="16 20">
                             <text id="txtSensTitle" text="识别灵敏度" textSize="18sp" textStyle="bold" />
-                            <text id="txtSensSub" text="过早提杆选「低」，漏提选「高」，状态框显示实时百分比" textSize="12sp" marginTop="0" marginBottom="12" />
+                            <text id="txtSensSub" text="过早提杆选「低」，夜里/暗水/识别不到选「高」" textSize="12sp" marginTop="0" marginBottom="12" />
 
                             <card cardCornerRadius="16dp" cardElevation="0dp" cardBackgroundColor="#00000000">
                                 <horizontal w="*" h="40dp">
@@ -920,24 +920,25 @@ function inputStreamToBytes(is) { var baos = new ByteArrayOutputStream(), buf = 
 function doClick(x, y) { try { click(x, y); } catch (e) { gesture(80, [x, y]); } }
 
 var SENS_PRESETS = {
-    low:  { delta: 32, absFloor: 16, minHits: 8, dropRatio: 0.10, backRatio: 0.55, dropMs: 350, backMs: 320, bufMax: 3, fastRatio: 0.06, fastFrames: 3, fastMs: 250, armRatio: 0.20, armFrames: 5 },
-    mid:  { delta: 24, absFloor: 12, minHits: 5, dropRatio: 0.16, backRatio: 0.60, dropMs: 160, backMs: 260, bufMax: 3, fastRatio: 0.08, fastFrames: 2, fastMs: 70, armRatio: 0.15, armFrames: 4 },
-    high: { delta: 20, absFloor: 10, minHits: 3, dropRatio: 0.22, backRatio: 0.65, dropMs: 90, backMs: 200, bufMax: 3, fastRatio: 0.12, fastFrames: 2, fastMs: 40, armRatio: 0.10, armFrames: 3 }
+    low:  { delta: 32, absFloor: 16, deltaG: 32, absFloorG: 14, topGoneMs: 250, topGoneRatio: 0.60, minHits: 8, dropRatio: 0.15, backRatio: 0.55, dropMs: 450, backMs: 320, bufMax: 3, fastRatio: 0.08, fastFrames: 3, fastMs: 300, armRatio: 0.20, armFrames: 5 },
+    mid:  { delta: 24, absFloor: 12, deltaG: 24, absFloorG: 10, topGoneMs: 130, topGoneRatio: 0.85, minHits: 5, dropRatio: 0.30, backRatio: 0.60, dropMs: 250, backMs: 260, bufMax: 3, fastRatio: 0.15, fastFrames: 2, fastMs: 120, armRatio: 0.15, armFrames: 4 },
+    high: { delta: 20, absFloor: 10, deltaG: 20, absFloorG: 8, topGoneMs: 80, topGoneRatio: 0.95, minHits: 3, dropRatio: 0.42, backRatio: 0.65, dropMs: 150, backMs: 200, bufMax: 3, fastRatio: 0.24, fastFrames: 2, fastMs: 70, armRatio: 0.08, armFrames: 3 }
 };
 
 function getDetectOpts(level) { return SENS_PRESETS[level] || SENS_PRESETS.mid; }
 function sensName(level) { return level === "low" ? "低" : (level === "high" ? "高" : "中"); }
 
 function analyzeRedRegion(px, rw, rh, o, cache, mask) {
-    var hist = (cache && cache.hist) ? cache.hist : new Array(512);
-    if (cache) cache.hist = hist;
+    var histR = (cache && cache.histR) ? cache.histR : new Array(512);
+    var histG = (cache && cache.histG) ? cache.histG : new Array(512);
+    if (cache) { cache.histR = histR; cache.histG = histG; }
     var i;
-    for (i = 0; i < 512; i++) hist[i] = 0;
+    for (i = 0; i < 512; i++) { histR[i] = 0; histG[i] = 0; }
 
     var hasMask = (mask != null);
     var mx0 = hasMask ? mask.x0 : 0, mx1 = hasMask ? mask.x1 : -1;
     var my0 = hasMask ? mask.y0 : 0, my1 = hasMask ? mask.y1 : -1;
-    var lumaSum = 0, lumaN = 0, x, y, rowOff, inMaskRow, c, r, g, b, red, bi, mx, mn;
+    var lumaSum = 0, lumaN = 0, x, y, rowOff, inMaskRow, c, r, g, b, red, grn, bi, mx, mn;
 
     for (y = 0; y < rh; y++) {
         rowOff = y * rw;
@@ -946,42 +947,57 @@ function analyzeRedRegion(px, rw, rh, o, cache, mask) {
             if (inMaskRow && x >= mx0 && x <= mx1) continue;
             c = px[rowOff + x];
             r = (c >> 16) & 0xff; g = (c >> 8) & 0xff; b = c & 0xff;
-            mx = g > b ? g : b;
-            mn = g < b ? g : b;
+            mx = g > b ? g : b; mn = g < b ? g : b;
             red = r - mx;
-            bi = red + 255;
-            if (bi < 0) bi = 0; else if (bi > 511) bi = 511;
-            hist[bi]++;
+            bi = red + 255; if (bi < 0) bi = 0; else if (bi > 511) bi = 511;
+            histR[bi]++;
+            mx = r > b ? r : b; mn = r < b ? r : b;
+            grn = g - mx;
+            bi = grn + 255; if (bi < 0) bi = 0; else if (bi > 511) bi = 511;
+            histG[bi]++;
             lumaSum += (r + r + r + g + g + g + b + b) >> 3;
             lumaN++;
         }
     }
-    if (lumaN === 0) return { score: 0, hits: 0, thr: 0, bgRed: 0, mean: 0, rw: rw, rh: rh, pixels: 0 };
+    if (lumaN === 0) return { score: 0, hits: 0, thr: 0, bgRed: 0, mean: 0, rw: rw, rh: rh, pixels: 0, redTop: -1, redRows: 0, greenTop: -1, gHits: 0 };
 
-    var want = Math.round(lumaN * 0.20), acc = 0, bgRed = -255;
+    var want = Math.round(lumaN * 0.20), acc = 0, bgRed = -255, bgGreen = -255;
     for (i = 0; i < 512; i++) {
-        acc += hist[i];
+        acc += histR[i];
         if (acc >= want) { bgRed = i - 255; break; }
+    }
+    acc = 0;
+    for (i = 0; i < 512; i++) {
+        acc += histG[i];
+        if (acc >= want) { bgGreen = i - 255; break; }
     }
 
     var thr = bgRed + o.delta;
     if (thr < o.absFloor) thr = o.absFloor;
+    var gthr = bgGreen + o.deltaG;
+    if (gthr < o.absFloorG) gthr = o.absFloorG;
 
-    var hits = 0, score = 0;
+    var hits = 0, score = 0, redTop = -1, redBot = -1, redRows = 0;
+    var gHits = 0, greenTop = -1;
     for (y = 0; y < rh; y++) {
         rowOff = y * rw;
         inMaskRow = hasMask && (y >= my0) && (y <= my1);
+        var rowRed = 0, rowGreen = 0;
         for (x = 0; x < rw; x++) {
             if (inMaskRow && x >= mx0 && x <= mx1) continue;
             c = px[rowOff + x];
             r = (c >> 16) & 0xff; g = (c >> 8) & 0xff; b = c & 0xff;
             red = r - (g > b ? g : b);
-            if (red >= thr) { hits++; score += red - thr; }
+            if (red >= thr) { hits++; score += red - thr; rowRed++; }
+            grn = g - (r > b ? r : b);
+            if (grn >= gthr) { gHits++; rowGreen++; if (greenTop < 0) greenTop = y; }
         }
+        if (rowRed > 0) { redRows++; if (redTop < 0) redTop = y; redBot = y; }
     }
     return {
-        score: score, hits: hits, thr: thr, bgRed: bgRed,
-        mean: lumaN > 0 ? lumaSum / lumaN : 0, rw: rw, rh: rh, pixels: lumaN
+        score: score, hits: hits, thr: thr, bgRed: bgRed, gthr: gthr, bgGreen: bgGreen,
+        mean: lumaN > 0 ? lumaSum / lumaN : 0, rw: rw, rh: rh, pixels: lumaN,
+        redTop: redTop, redBot: redBot, redRows: redRows, greenTop: greenTop, gHits: gHits
     };
 }
 
@@ -1003,7 +1019,7 @@ function createDetector(o, regionH) {
     return {
         opts: o, buf: [], base: 0, stage: "ACQUIRE", armHits: 0, armNeed: 12, fastMode: false,
         markKind: "", markMs: 0, lastRaw: 0, lastScore: 0, armAt: 0, latch: false, backLatch: false,
-        rawRing: [], fastPending: false,
+        rawRing: [], fastPending: false, posValid: false, topMode: false, baseRows: 0,
         minBase: Math.max(16, Math.round((regionH || 40) * 0.10))
     };
 }
@@ -1021,11 +1037,20 @@ function detectorReset(det) {
     det.backLatch = false;
     det.rawRing = [];
     det.fastPending = false;
+    det.posValid = false;
+    det.topMode = false;
+    det.baseRows = 0;
 }
 
-function detectorStep(det, rawScore, now, phase, hits) {
+function detectorStep(det, rawScore, now, phase, hits, pos) {
     var o = det.opts;
     if (hits == null) hits = rawScore > 0 ? 1e9 : 0;
+    var topGone = false, posUsable = false;
+    if (pos != null && det.posValid && det.baseRows > 0) {
+        posUsable = true;
+        if (pos.redTop < 0) topGone = true;
+        else if (pos.greenTop < 0 && pos.redRows <= det.baseRows * o.topGoneRatio) topGone = true;
+    }
     det.lastRaw = rawScore;
     det.buf.push(rawScore);
     while (det.buf.length > o.bufMax) det.buf.shift();
@@ -1049,7 +1074,13 @@ function detectorStep(det, rawScore, now, phase, hits) {
 
     if (phase === "BITE") {
         if (now - det.armAt < 600) {
-            if (s >= det.base * o.backRatio) det.base = det.base * 0.9 + s * 0.1;
+            if (s >= det.base * o.backRatio) {
+                det.base = det.base * 0.9 + s * 0.1;
+                if (pos != null && pos.redTop >= 0 && pos.greenTop >= 0) {
+                    det.posValid = true;
+                    if (pos.redRows > det.baseRows) det.baseRows = pos.redRows;
+                }
+            }
             return { action: "none", score: s, base: det.base, ratio: ratio };
         }
         if (det.latch) {
@@ -1061,19 +1092,25 @@ function detectorStep(det, rawScore, now, phase, hits) {
         var lowCount = 0, ri;
         for (ri = 0; ri < det.rawRing.length; ri++) if (det.base > 0 && det.rawRing[ri] < det.base * o.fastRatio) lowCount++;
         var isFast = (det.rawRing.length >= o.fastFrames && lowCount >= o.fastFrames);
-        var isDrop = (s < det.base * o.dropRatio);
+        var isDrop = (!posUsable) && (s < det.base * o.dropRatio);
         det.fastPending = (lowCount > 0);
-        if (isFast || isDrop) {
-            if (det.markKind !== "gone") { det.markKind = "gone"; det.markMs = now; det.fastMode = isFast; }
-            var need = det.fastMode ? o.fastMs : o.dropMs;
+        if (topGone || isFast || isDrop) {
+            if (det.markKind !== "gone") { det.markKind = "gone"; det.markMs = now; det.fastMode = isFast; det.topMode = topGone; }
+            var need = det.topMode ? o.topGoneMs : (det.fastMode ? o.fastMs : o.dropMs);
             if (now - det.markMs >= need) {
                 det.rawRing = []; det.fastPending = false; det.fastMode = false;
                 det.markKind = ""; det.markMs = 0; det.latch = true;
-                return { action: "bite", score: s, base: det.base, ratio: ratio, fast: det.fastMode };
+                return { action: "bite", score: s, base: det.base, ratio: ratio, fast: det.fastMode, top: det.topMode };
             }
         } else {
             det.markKind = ""; det.markMs = 0;
-            if (s >= det.base * o.backRatio) det.base = det.base * 0.9 + s * 0.1;
+            if (s >= det.base * o.backRatio) {
+                det.base = det.base * 0.9 + s * 0.1;
+                if (pos != null && pos.redTop >= 0 && pos.greenTop >= 0) {
+                    det.posValid = true;
+                    if (pos.redRows > det.baseRows) det.baseRows = pos.redRows;
+                }
+            }
         }
     } else {
         if (det.backLatch) {
@@ -1555,7 +1592,7 @@ function launchFloatAndLoop(fx, fy, mx, my, region) {
                 screen.recycle();
                 if (res == null) { sleep(CONFIG.pollMs); continue; }
 
-                if (res.mean < 8) {
+                if (res.mean < 5) {
                     blackCount++;
                     if (blackCount >= CONFIG.blackFrames) {
                         blackCount = 0;
@@ -1574,7 +1611,7 @@ function launchFloatAndLoop(fx, fy, mx, my, region) {
                 det.minBase = Math.max(16, Math.round(res.rh * 0.10));
                 det.armNeed = Math.max(12, Math.round(res.rh * det.opts.armRatio));
                 var score = lineScoreOf(res, det.opts);
-                var r = detectorStep(det, score, now, (state === "WAIT_BITE") ? "BITE" : "LINE", res.hits);
+                var r = detectorStep(det, score, now, (state === "WAIT_BITE") ? "BITE" : "LINE", res.hits, res);
 
                 if (det.stage === "ARMED" && det.base > 0 && score < det.base * det.opts.fastRatio && state !== "WAIT_BITE" && now - lastGoneMs > 2000) {
                     lastGoneMs = now;
@@ -1660,7 +1697,9 @@ function launchFloatAndLoop(fx, fy, mx, my, region) {
                     dlog("state=" + state + " stage=" + det.stage + " raw=" + score.toFixed(1) + " med=" + det.lastScore.toFixed(1) +
                          " base=" + det.base.toFixed(1) + " ratio=" + (det.base > 0 ? (det.lastScore / det.base).toFixed(2) : "-") +
                          " hits=" + res.hits + " thr=" + res.thr + " bgRed=" + res.bgRed +
-                         " mean=" + res.mean.toFixed(1) + " ov=" + (ov * 100).toFixed(0) + "%");
+                         " redTop=" + res.redTop + " redRows=" + res.redRows + "/" + det.baseRows +
+                         " greenTop=" + res.greenTop + " gHits=" + res.gHits +
+                         " posValid=" + det.posValid + " mean=" + res.mean.toFixed(1) + " ov=" + (ov * 100).toFixed(0) + "%");
                     flushLog();
                 }
             } catch (e) {
