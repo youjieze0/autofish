@@ -22,17 +22,15 @@ importClass(android.animation.LayoutTransition);
 
 var CONFIG = {
     workDir:      "/sdcard/AutoFish",
-    pollMs:       70,
-    pollFastMs:   45,
+    pollMs:       55,
+    pollFastMs:   35,
     landscape:    "auto",
     waitLineMs:   25000,
     maxRecast:    3,
-    floatGuard:   0.35,
+    floatGuard:   0.85,
     guardTickMs:  1000,
     blackFrames:  120,
-    staticFrames: 110,
-    nullFrames:   60,
-    offGameFrames: 3
+    nullFrames:   60
 };
 
 var THEME = {
@@ -53,7 +51,9 @@ var THEME = {
         alert: "#BA1A1A",
         onAlert: "#FFFFFF",
         solid: "#4A4458",
-        onSolid: "#FFFFFF"
+        onSolid: "#FFFFFF",
+        success: "#1E6B45",
+        onSuccess: "#FFFFFF"
     },
     dark: {
         bg: "#141218",
@@ -72,7 +72,9 @@ var THEME = {
         alert: "#BA1A1A",
         onAlert: "#FFFFFF",
         solid: "#4A4458",
-        onSolid: "#FFFFFF"
+        onSolid: "#FFFFFF",
+        success: "#1E6B45",
+        onSuccess: "#FFFFFF"
     }
 };
 
@@ -129,7 +131,7 @@ ui.layout(
                     <card id="cardSens" w="*" h="wrap_content" margin="8 0 8 8" cardCornerRadius="16dp" cardElevation="0dp">
                         <vertical padding="16 20">
                             <text id="txtSensTitle" text="识别灵敏度" textSize="18sp" textStyle="bold" />
-                            <text id="txtSensSub" text="深色海/暗红线选「高」，误触多则选「低」" textSize="12sp" marginTop="0" marginBottom="12" />
+                            <text id="txtSensSub" text="过早提杆选「低」，漏提选「高」，状态框显示实时百分比" textSize="12sp" marginTop="0" marginBottom="12" />
 
                             <card cardCornerRadius="16dp" cardElevation="0dp" cardBackgroundColor="#00000000">
                                 <horizontal w="*" h="40dp">
@@ -412,17 +414,6 @@ function updateLogSwitchUI(isOn, animate) {
 }
 
 var logFlushHook = null;
-var targetPkg = null;
-
-function detectTargetPkg() {
-    try {
-        var pkg = currentPackage();
-        if (!pkg) return null;
-        if (pkg === context.getPackageName()) return null;
-        if (pkg.indexOf("autojs") >= 0 || pkg.indexOf("autox") >= 0) return null;
-        return pkg;
-    } catch (e) { return null; }
-}
 
 function isDebugOn() {
     try { return storage.get("debugLog", false) === true; } catch (e) { return false; }
@@ -708,7 +699,7 @@ function openSelectKey(storeX, storeY, srcKey, title) {
 }
 
 function openSelectRegion() {
-    toast("请选择已放大的红线截图，紧贴框选红线");
+    toast("框住浮漂在等待时上下浮动的整个范围：上下各留出它浮动的余量，左右留一点水面");
     pickImage(function (imgPath) {
         if (!imgPath) return;
         var srcImg = loadCropImage(imgPath);
@@ -716,7 +707,7 @@ function openSelectRegion() {
         warnImageMismatch(srcImg);
         storage.put("lineRegionSrc", JSON.stringify([srcImg.getWidth(), srcImg.getHeight()]));
 
-        launchCropPage(srcImg, "紧贴框选下沉【红线】", function (rect) {
+        launchCropPage(srcImg, "框住浮漂整个浮动范围", function (rect) {
             var region = [Math.round(rect.x), Math.round(rect.y), Math.round(rect.w), Math.round(rect.h)];
             storage.put("lineRegion", JSON.stringify(region));
             toast("红线区域已保存"); refreshMainUI();
@@ -823,9 +814,14 @@ ui.cv.setOnTouchListener(function(view, event) {
 function detectLandscape() {
     if (CONFIG.landscape === true || CONFIG.landscape === false) return CONFIG.landscape;
     try {
-        var dm = context.getResources().getDisplayMetrics();
-        return dm.widthPixels >= dm.heightPixels;
-    } catch (e) { return true; }
+        var raw = storage.get("lineRegionSrc");
+        if (raw == null) raw = storage.get("fishSrc");
+        if (raw != null) {
+            var a = JSON.parse(raw);
+            if (a[0] > 0 && a[1] > 0) return a[0] >= a[1];
+        }
+    } catch (e) {}
+    return true;
 }
 
 function ensureScreenCapture() {
@@ -924,79 +920,74 @@ function inputStreamToBytes(is) { var baos = new ByteArrayOutputStream(), buf = 
 function doClick(x, y) { try { click(x, y); } catch (e) { gesture(80, [x, y]); } }
 
 var SENS_PRESETS = {
-    low:  { satMin: 0.45, valMin: 75, minChroma: 70, hueTol: 14, cohMin: 0.34, minSpanRatio: 0.18, minHits: 10,
-            dropRatio: 0.18, backRatio: 0.55, dropMs: 300, backMs: 320, calMs: 900, calMsShort: 420, bufMax: 3 },
-    mid:  { satMin: 0.36, valMin: 62, minChroma: 55, hueTol: 20, cohMin: 0.26, minSpanRatio: 0.14, minHits: 7,
-            dropRatio: 0.24, backRatio: 0.60, dropMs: 220, backMs: 260, calMs: 800, calMsShort: 360, bufMax: 3 },
-    high: { satMin: 0.28, valMin: 50, minChroma: 42, hueTol: 22, cohMin: 0.18, minSpanRatio: 0.10, minHits: 5,
-            dropRatio: 0.34, backRatio: 0.65, dropMs: 150, backMs: 200, calMs: 700, calMsShort: 320, bufMax: 3 }
+    low:  { delta: 32, absFloor: 16, minHits: 8, dropRatio: 0.10, backRatio: 0.55, dropMs: 350, backMs: 320, bufMax: 3, fastRatio: 0.06, fastFrames: 3, fastMs: 250, armRatio: 0.20, armFrames: 5 },
+    mid:  { delta: 24, absFloor: 12, minHits: 5, dropRatio: 0.16, backRatio: 0.60, dropMs: 160, backMs: 260, bufMax: 3, fastRatio: 0.08, fastFrames: 2, fastMs: 70, armRatio: 0.15, armFrames: 4 },
+    high: { delta: 20, absFloor: 10, minHits: 3, dropRatio: 0.22, backRatio: 0.65, dropMs: 90, backMs: 200, bufMax: 3, fastRatio: 0.12, fastFrames: 2, fastMs: 40, armRatio: 0.10, armFrames: 3 }
 };
 
 function getDetectOpts(level) { return SENS_PRESETS[level] || SENS_PRESETS.mid; }
 function sensName(level) { return level === "low" ? "低" : (level === "high" ? "高" : "中"); }
 
-function redWeightRGB(r, g, b, o) {
-    var mx = (r >= g) ? ((r >= b) ? r : b) : ((g >= b) ? g : b);
-    if (r < mx) return 0;
-    if (mx < o.valMin) return 0;
-    var mn = (r <= g) ? ((r <= b) ? r : b) : ((g <= b) ? g : b);
-    var chroma = mx - mn;
-    if (chroma < o.minChroma) return 0;
-    var sat = chroma / mx;
-    if (sat < o.satMin) return 0;
-    var dev = 60 * (g - b) / chroma;
-    if (dev > o.hueTol) return 0;
-    if (dev < -o.hueTol) return 0;
-    return sat;
-}
-
-function redPixelWeight(c, o) {
-    return redWeightRGB((c >> 16) & 0xff, (c >> 8) & 0xff, c & 0xff, o);
-}
-
 function analyzeRedRegion(px, rw, rh, o, cache, mask) {
-    var cols = (cache && cache.cols && cache.cols.length >= rw) ? cache.cols : new Array(rw);
+    var hist = (cache && cache.hist) ? cache.hist : new Array(512);
+    if (cache) cache.hist = hist;
     var i;
-    for (i = 0; i < rw; i++) cols[i] = 0;
+    for (i = 0; i < 512; i++) hist[i] = 0;
 
-    var score = 0, hits = 0, rowSpan = 0, lumaSum = 0, lumaN = 0;
     var hasMask = (mask != null);
     var mx0 = hasMask ? mask.x0 : 0, mx1 = hasMask ? mask.x1 : -1;
     var my0 = hasMask ? mask.y0 : 0, my1 = hasMask ? mask.y1 : -1;
+    var lumaSum = 0, lumaN = 0, x, y, rowOff, inMaskRow, c, r, g, b, red, bi, mx, mn;
 
-    for (var y = 0; y < rh; y++) {
-        var rowOff = y * rw, rowUsed = 0;
-        var inMaskRow = hasMask && (y >= my0) && (y <= my1);
-        for (var x = 0; x < rw; x++) {
+    for (y = 0; y < rh; y++) {
+        rowOff = y * rw;
+        inMaskRow = hasMask && (y >= my0) && (y <= my1);
+        for (x = 0; x < rw; x++) {
             if (inMaskRow && x >= mx0 && x <= mx1) continue;
-            var c = px[rowOff + x];
-            var r = (c >> 16) & 0xff, g = (c >> 8) & 0xff, b = c & 0xff;
+            c = px[rowOff + x];
+            r = (c >> 16) & 0xff; g = (c >> 8) & 0xff; b = c & 0xff;
+            mx = g > b ? g : b;
+            mn = g < b ? g : b;
+            red = r - mx;
+            bi = red + 255;
+            if (bi < 0) bi = 0; else if (bi > 511) bi = 511;
+            hist[bi]++;
             lumaSum += (r + r + r + g + g + g + b + b) >> 3;
             lumaN++;
-            var w = redWeightRGB(r, g, b, o);
-            if (w > 0) { score += w; hits++; cols[x]++; rowUsed++; }
         }
-        if (rowUsed > 0) rowSpan++;
+    }
+    if (lumaN === 0) return { score: 0, hits: 0, thr: 0, bgRed: 0, mean: 0, rw: rw, rh: rh, pixels: 0 };
+
+    var want = Math.round(lumaN * 0.20), acc = 0, bgRed = -255;
+    for (i = 0; i < 512; i++) {
+        acc += hist[i];
+        if (acc >= want) { bgRed = i - 255; break; }
     }
 
-    var maxCol = 0, bestPair = 0;
-    for (i = 0; i < rw; i++) {
-        if (cols[i] > maxCol) maxCol = cols[i];
-        var pair = cols[i] + ((i + 1 < rw) ? cols[i + 1] : 0);
-        if (pair > bestPair) bestPair = pair;
+    var thr = bgRed + o.delta;
+    if (thr < o.absFloor) thr = o.absFloor;
+
+    var hits = 0, score = 0;
+    for (y = 0; y < rh; y++) {
+        rowOff = y * rw;
+        inMaskRow = hasMask && (y >= my0) && (y <= my1);
+        for (x = 0; x < rw; x++) {
+            if (inMaskRow && x >= mx0 && x <= mx1) continue;
+            c = px[rowOff + x];
+            r = (c >> 16) & 0xff; g = (c >> 8) & 0xff; b = c & 0xff;
+            red = r - (g > b ? g : b);
+            if (red >= thr) { hits++; score += red - thr; }
+        }
     }
     return {
-        score: score, hits: hits, maxCol: maxCol, rowSpan: rowSpan,
-        coherence: hits > 0 ? bestPair / hits : 0, rw: rw, rh: rh,
-        mean: lumaN > 0 ? lumaSum / lumaN : 0, pixels: lumaN
+        score: score, hits: hits, thr: thr, bgRed: bgRed,
+        mean: lumaN > 0 ? lumaSum / lumaN : 0, rw: rw, rh: rh, pixels: lumaN
     };
 }
 
 function lineScoreOf(res, o) {
     if (!res) return 0;
     if (res.hits < o.minHits) return 0;
-    if (res.rowSpan < Math.max(3, Math.round(res.rh * o.minSpanRatio))) return 0;
-    if (res.coherence < o.cohMin) return 0;
     return res.score;
 }
 
@@ -1007,67 +998,78 @@ function medianOf(arr) {
     return (n % 2) ? t[(n - 1) / 2] : (t[n / 2 - 1] + t[n / 2]) / 2;
 }
 
-function percentile(arr, q) {
-    var n = arr.length; if (n === 0) return 0;
-    var t = arr.slice(0), i, j, v;
-    for (i = 1; i < n; i++) { v = t[i]; j = i - 1; while (j >= 0 && t[j] > v) { t[j + 1] = t[j]; j--; } t[j + 1] = v; }
-    var k = Math.round(q * (n - 1));
-    if (k < 0) k = 0; if (k > n - 1) k = n - 1;
-    return t[k];
-}
 
 function createDetector(o, regionH) {
     return {
-        opts: o, buf: [], base: 0, stage: "CAL", calStart: 0, calMs: o.calMs,
-        calSamples: [], markKind: "", markMs: 0, lastRaw: 0, lastScore: 0, latch: false, backLatch: false,
-        minBase: Math.max(4, Math.round((regionH || 40) * 0.05))
+        opts: o, buf: [], base: 0, stage: "ACQUIRE", armHits: 0, armNeed: 12, fastMode: false,
+        markKind: "", markMs: 0, lastRaw: 0, lastScore: 0, armAt: 0, latch: false, backLatch: false,
+        rawRing: [], fastPending: false,
+        minBase: Math.max(16, Math.round((regionH || 40) * 0.10))
     };
 }
 
-function detectorStartCal(det, now, ms) {
-    det.stage = "CAL";
-    det.calStart = now;
-    det.calMs = ms || det.opts.calMs;
-    det.calSamples = [];
+function detectorReset(det) {
+    det.stage = "ACQUIRE";
+    det.base = 0;
+    det.armHits = 0;
+    det.armAt = 0;
+    det.fastMode = false;
     det.buf = [];
     det.markKind = "";
     det.markMs = 0;
     det.latch = false;
     det.backLatch = false;
+    det.rawRing = [];
+    det.fastPending = false;
 }
 
-function detectorStep(det, rawScore, now, phase) {
+function detectorStep(det, rawScore, now, phase, hits) {
     var o = det.opts;
+    if (hits == null) hits = rawScore > 0 ? 1e9 : 0;
     det.lastRaw = rawScore;
     det.buf.push(rawScore);
     while (det.buf.length > o.bufMax) det.buf.shift();
     var s = medianOf(det.buf);
     det.lastScore = s;
 
-    if (det.stage === "CAL") {
-        if (det.calStart === 0) det.calStart = now;
-        if (s > 0) det.calSamples.push(s);
-        if (now - det.calStart < det.calMs) return { action: "calibrating", score: s, base: 0, ratio: 0 };
-        if (det.calSamples.length < 2) return { action: "cal_failed", score: s, base: 0, ratio: 0, reason: "no_line" };
-        var b = percentile(det.calSamples, 0.75);
-        if (b < det.minBase) return { action: "cal_failed", score: s, base: b, ratio: 0, reason: "weak_line" };
-        det.base = b;
-        det.stage = "ARMED";
-        return { action: "cal_done", score: s, base: b, ratio: 1 };
+    if (det.stage === "ACQUIRE") {
+        if (rawScore >= det.minBase && s >= det.minBase && hits >= det.armNeed) det.armHits++; else det.armHits = 0;
+        if (det.armHits >= o.armFrames) {
+            det.base = Math.max(s, det.minBase);
+            det.stage = "ARMED";
+            det.armHits = 0;
+            det.armAt = now;
+            det.markKind = ""; det.markMs = 0;
+            return { action: "acquired", score: s, base: det.base, ratio: 1 };
+        }
+        return { action: "searching", score: s, base: 0, ratio: 0 };
     }
 
     var ratio = det.base > 0 ? s / det.base : 0;
 
     if (phase === "BITE") {
+        if (now - det.armAt < 600) {
+            if (s >= det.base * o.backRatio) det.base = det.base * 0.9 + s * 0.1;
+            return { action: "none", score: s, base: det.base, ratio: ratio };
+        }
         if (det.latch) {
             if (s >= det.base * o.backRatio) det.latch = false;
             return { action: "none", score: s, base: det.base, ratio: ratio };
         }
-        if (s < det.base * o.dropRatio) {
-            if (det.markKind !== "gone") { det.markKind = "gone"; det.markMs = now; }
-            else if (now - det.markMs >= o.dropMs) {
+        det.rawRing.push(rawScore);
+        while (det.rawRing.length > o.fastFrames + 1) det.rawRing.shift();
+        var lowCount = 0, ri;
+        for (ri = 0; ri < det.rawRing.length; ri++) if (det.base > 0 && det.rawRing[ri] < det.base * o.fastRatio) lowCount++;
+        var isFast = (det.rawRing.length >= o.fastFrames && lowCount >= o.fastFrames);
+        var isDrop = (s < det.base * o.dropRatio);
+        det.fastPending = (lowCount > 0);
+        if (isFast || isDrop) {
+            if (det.markKind !== "gone") { det.markKind = "gone"; det.markMs = now; det.fastMode = isFast; }
+            var need = det.fastMode ? o.fastMs : o.dropMs;
+            if (now - det.markMs >= need) {
+                det.rawRing = []; det.fastPending = false; det.fastMode = false;
                 det.markKind = ""; det.markMs = 0; det.latch = true;
-                return { action: "bite", score: s, base: det.base, ratio: ratio };
+                return { action: "bite", score: s, base: det.base, ratio: ratio, fast: det.fastMode };
             }
         } else {
             det.markKind = ""; det.markMs = 0;
@@ -1091,7 +1093,7 @@ function detectorStep(det, rawScore, now, phase) {
 
 var detectOpts = getDetectOpts(storage.get("sensLevel", "mid"));
 
-var pixStore = { buf: null, len: 0, cols: null };
+var pixStore = { buf: null, len: 0, hist: null };
 
 function grabLineStats(screen, region, mask) {
     var bmp = screen.getBitmap(); if (bmp == null) return null;
@@ -1106,12 +1108,7 @@ function grabLineStats(screen, region, mask) {
         pixStore.len = n;
     }
     bmp.getPixels(pixStore.buf, 0, rw, rx, ry, rw, rh);
-    if (pixStore.cols == null || pixStore.cols.length < rw) pixStore.cols = new Array(rw);
-    var out = analyzeRedRegion(pixStore.buf, rw, rh, detectOpts, pixStore, mask);
-    var sig = 0, n2 = rw * rh;
-    for (var k = 0; k < 32; k++) sig = (sig * 31 + pixStore.buf[((k * 977) % n2) | 0]) | 0;
-    out.sig = sig;
-    return out;
+    return analyzeRedRegion(pixStore.buf, rw, rh, detectOpts, pixStore, mask);
 }
 
 function computeScale(srcKey) {
@@ -1261,14 +1258,20 @@ function launchFloatAndLoop(fx, fy, mx, my, region) {
     setTimeout(function() {
         try { floatWin.setPosition(floatPos.x, floatPos.y); } catch(e) {}
     }, 300);
-    setTimeout(function() {
+    function measureFloat() {
         ui.run(function() {
             try {
                 var fw = floatWin.floatRoot.getWidth(), fh = floatWin.floatRoot.getHeight();
-                if (fw > 0 && fh > 0) { floatPos.w = fw; floatPos.h = fh; }
+                if (fw > 0 && fh > 0) { floatPos.w = fw; floatPos.h = fh; return; }
             } catch(e) {}
+            if (!floatPos.w || !floatPos.h) {
+                floatPos.w = Math.round(166 * density);
+                floatPos.h = Math.round(138 * density);
+            }
         });
-    }, 800);
+    }
+
+    setTimeout(function() { measureFloat(); }, 800);
 
     var det = createDetector(detectOpts, region[3]);
     var lineSince = Date.now();
@@ -1276,9 +1279,6 @@ function launchFloatAndLoop(fx, fy, mx, my, region) {
     var lastStatMs = 0;
     var logLines = [];
     var logWritten = 0;
-    var offGameCount = 0;
-    var guardBlocked = false;
-    var fgPkg = null;
 
     function floatRect() {
         if (!floatPos.w || !floatPos.h) return null;
@@ -1318,6 +1318,8 @@ function launchFloatAndLoop(fx, fy, mx, my, region) {
 
     var state = "WAIT_BITE";
     var alphaTimer = null;
+    var searchTicks = 0;
+    var phaseText = "识别红线中", phaseBg = "primary", phaseFg = "onPrimary", phaseExtra = "";
 
     function wakeUpFloat() {
         ui.run(function(){ floatWin.floatBg.setAlpha(1.0); });
@@ -1363,6 +1365,16 @@ function launchFloatAndLoop(fx, fy, mx, my, region) {
         });
     }
 
+    function setPhase(key, extra) {
+        if (key === "found") { phaseText = "识别到红线"; phaseBg = "success"; phaseFg = "onSuccess"; }
+        else if (key === "reel") { phaseText = "自动提杆中"; phaseBg = "alert"; phaseFg = "onAlert"; }
+        else if (key === "gap") { phaseText = "间隔等待中"; phaseBg = "solid"; phaseFg = "onSolid"; }
+        else if (key === "cast") { phaseText = "自动抛杆中"; phaseBg = "primary"; phaseFg = "onPrimary"; }
+        else { phaseText = "识别红线中"; phaseBg = "primary"; phaseFg = "onPrimary"; }
+        phaseExtra = extra || "";
+        updateStatus(phaseText + phaseExtra, phaseBg, phaseFg);
+    }
+
     function toggleListen() {
         var curIsDark = isDarkMode();
         var clr = curIsDark ? THEME.dark : THEME.light;
@@ -1385,19 +1397,17 @@ function launchFloatAndLoop(fx, fy, mx, my, region) {
             toast("检测已暂停");
         } else {
             isListening = true;
-            detectorStartCal(det, Date.now());
             recastTries = 0;
             lineSince = Date.now();
             state = "WAIT_BITE";
-            offGameCount = 0;
-            guardBlocked = false;
-            targetPkg = detectTargetPkg();
+            searchTicks = 0;
+            detectorReset(det);
+            setPhase("search");
             ui.run(function(){
                 floatWin.txtToggle.setText("暂停检测");
                 floatWin.btnToggle.setCardBackgroundColor(Color.parseColor(clr.alert));
                 floatWin.txtToggle.setTextColor(Color.parseColor(clr.onAlert));
             });
-            updateStatus("检测红线...", "warning", "onWarning");
             toast("开始检测红线...");
         }
     }
@@ -1443,32 +1453,13 @@ function launchFloatAndLoop(fx, fy, mx, my, region) {
                 if (nr.join(",") !== region.join(",")) {
                     region = nr;
                     lineSince = now;
-                    detectorStartCal(det, now);
+                    detectorReset(det);
                     dlog("区域热更新 -> [" + region.join(",") + "]");
                 }
             }
             var nfx = storage.get("fishX"), nfy = storage.get("fishY"), nmx = storage.get("magX"), nmy = storage.get("magY");
             if (nfx != null) { fx = nfx; fy = nfy; mx = nmx; my = nmy; }
-
-            var pkg = null;
-            try { pkg = currentPackage(); } catch (e) {}
-            if (pkg) {
-                fgPkg = pkg;
-                if (targetPkg == null) targetPkg = detectTargetPkg();
-                if (targetPkg != null) {
-                    if (pkg !== targetPkg) offGameCount++; else offGameCount = 0;
-                    var wasBlocked = guardBlocked;
-                    guardBlocked = (offGameCount >= CONFIG.offGameFrames);
-                    if (!wasBlocked && guardBlocked) dlog("已切出目标应用(" + pkg + " 应为 " + targetPkg + ")，暂停检测与点击");
-                    if (wasBlocked && !guardBlocked) {
-                        state = "WAIT_BITE";
-                        lineSince = now;
-                        recastTries = 0;
-                        detectorStartCal(det, now);
-                        dlog("回到目标应用，重新标定");
-                    }
-                }
-            }
+            if (!floatPos.w || !floatPos.h) measureFloat();
         } catch (e) {}
     }
 
@@ -1477,15 +1468,22 @@ function launchFloatAndLoop(fx, fy, mx, my, region) {
         dlog("=== 识别引擎 v2 启动 ===");
         dlog("屏幕 " + dm0.widthPixels + "x" + dm0.heightPixels + " 区域[" + region.join(",") + "] 灵敏度 " + sensName(storage.get("sensLevel", "mid")) +
              " | 区域" + scaleNoteOf("lineRegionSrc") + " | 按键" + scaleNoteOf("fishSrc"));
+        measureFloat();
+        dlog("悬浮窗 位置(" + floatPos.x + "," + floatPos.y + ") 尺寸 " + floatPos.w + "x" + floatPos.h +
+             " 与区域重叠 " + (rectOverlapRatio(floatRect(), region) * 100).toFixed(0) + "%");
         if (isDebugOn()) flushLog(true);
 
         var lastFlush = 0;
         var lastCfgMs = 0;
+        var debugOnNow = isDebugOn();
+        var cfgTick = 0;
         var lastGuardMs = 0;
         var blackCount = 0;
         var nullCount = 0;
-        var lastSig = 0;
-        var staticCount = 0;
+        var lastOrientMs = 0;
+        var lastGoneMs = 0;
+        var sizeTick = 0;
+        var orientFixTried = false;
 
         while (serviceAlive) {
             try {
@@ -1495,36 +1493,47 @@ function launchFloatAndLoop(fx, fy, mx, my, region) {
 
                 if (now - lastCfgMs >= CONFIG.guardTickMs) {
                     lastCfgMs = now;
+                    cfgTick++;
+                    if (cfgTick % 4 === 1) debugOnNow = isDebugOn();
+                    sizeTick++;
+                    if (sizeTick % 10 === 0) measureFloat();
                     applyConfigTick(now);
-                }
-
-                if (guardBlocked) {
-                    if (now - lastGuardMs > 800) {
-                        lastGuardMs = now;
-                        updateStatus("已切出游戏，暂停", "solid", "onSolid");
-                    }
-                    sleep(400);
-                    continue;
                 }
 
                 if (det.opts !== detectOpts) {
                     det.opts = detectOpts;
-                    detectorStartCal(det, Date.now());
+                    detectorReset(det);
                     dlog("灵敏度热切换 -> " + sensName(storage.get("sensLevel", "mid")));
                 }
 
                 var fr = floatRect();
                 var ov = rectOverlapRatio(fr, region);
                 if (ov > CONFIG.floatGuard) {
-                    if (now - lastGuardMs > 500) {
+                    if (now - lastGuardMs > 800) {
                         lastGuardMs = now;
+                        dlog("悬浮窗遮挡红线区 " + (ov * 100).toFixed(0) + "%，暂缓检测");
                         updateStatus("悬浮窗遮住红线区\n请拖开", "alert", "onAlert");
                     }
-                    sleep(250);
+                    sleep(300);
                     continue;
                 }
 
                 var screen = captureScreen();
+                if (screen != null && now - lastOrientMs > 3000) {
+                    lastOrientMs = now;
+                    var pw = 0, ph = 0;
+                    try { pw = screen.getWidth(); ph = screen.getHeight(); } catch (e2) {}
+                    var dmo = context.getResources().getDisplayMetrics();
+                    if (pw > 0 && ph > 0 && ((pw > ph) !== (dmo.widthPixels > dmo.heightPixels))) {
+                        dlog("警告：截图方向 " + pw + "x" + ph + " 与屏幕 " + dmo.widthPixels + "x" + dmo.heightPixels + " 不一致");
+                        if (!orientFixTried) {
+                            orientFixTried = true;
+                            toast("截图方向不对，正在按框选截图的方向重新申请截图权限");
+                            screenCaptureReady = false;
+                            ensureScreenCapture();
+                        }
+                    }
+                }
                 if (screen == null) {
                     nullCount++;
                     if (nullCount >= CONFIG.nullFrames) {
@@ -1562,64 +1571,67 @@ function launchFloatAndLoop(fx, fy, mx, my, region) {
                 }
                 blackCount = 0;
 
-                if (res.sig === lastSig) staticCount++; else { staticCount = 0; lastSig = res.sig; }
-                if (staticCount >= CONFIG.staticFrames) {
-                    if (now - lastGuardMs > 800) {
-                        lastGuardMs = now;
-                        updateStatus("画面静止，暂停点击", "solid", "onSolid");
-                    }
-                    sleep(200);
-                    continue;
-                }
-
-                det.minBase = Math.max(4, Math.round(res.rh * 0.05));
+                det.minBase = Math.max(16, Math.round(res.rh * 0.10));
+                det.armNeed = Math.max(12, Math.round(res.rh * det.opts.armRatio));
                 var score = lineScoreOf(res, det.opts);
-                var r = detectorStep(det, score, now, (state === "WAIT_BITE") ? "BITE" : "LINE");
+                var r = detectorStep(det, score, now, (state === "WAIT_BITE") ? "BITE" : "LINE", res.hits);
 
-                if (isDebugOn() && det.stage === "ARMED" && state === "WAIT_BITE" && now - lastStatMs > 400) {
-                    lastStatMs = now;
-                    updateStatus("红线判定 " + Math.round((r.ratio || 0) * 100) + "%", "warning", "onWarning");
+                if (det.stage === "ARMED" && det.base > 0 && score < det.base * det.opts.fastRatio && state !== "WAIT_BITE" && now - lastGoneMs > 2000) {
+                    lastGoneMs = now;
+                    dlog("注意：红线已消失，但当前处于等待刷新阶段，不判定咬钩 state=" + state);
                 }
 
-                if (r.action === "cal_done") {
-                    dlog("标定完成 base=" + r.base.toFixed(1) + " (下限 " + det.minBase + ")");
-                    updateStatus("检测红线...", "warning", "onWarning");
+                if (now - lastStatMs > 150) {
+                    lastStatMs = now;
+                    if (det.stage === "ARMED") updateStatus(phaseText + " · " + Math.round((r.ratio || 0) * 100) + "%", phaseBg, phaseFg);
+                    else updateStatus(phaseText + phaseExtra + " · 分" + Math.round(score), phaseBg, phaseFg);
+                }
 
-                } else if (r.action === "cal_failed") {
-                    dlog("标定失败(" + r.reason + ") 分=" + r.base.toFixed(1) + " 下限=" + det.minBase +
-                         " hits=" + res.hits + " coh=" + res.coherence.toFixed(2) + " span=" + res.rowSpan + "/" + res.rh +
-                         " mean=" + res.mean.toFixed(1));
-                    toast("未检测到红线：请确认框选区域正确、截图未裁剪、悬浮窗未遮挡");
-                    if (isListening) {
-                        toggleListen();
-                        ui.run(function(){ floatWin.txtStatus.setText("未检测到红线"); });
+                if (r.action === "acquired") {
+                    searchTicks = 0;
+                    state = "WAIT_BITE";
+                    lineSince = now;
+                    recastTries = 0;
+                    dlog("已就位 base=" + r.base.toFixed(1) + " hits=" + res.hits + " (下限 " + det.minBase + "/" + det.armNeed + ") state=WAIT_BITE");
+                    setPhase("found");
+
+                } else if (r.action === "searching") {
+                    searchTicks++;
+                    if (searchTicks === 15) {
+                        dlog("仍未识别到红色 分=" + r.score.toFixed(1) + " 下限=" + det.minBase +
+                             " hits=" + res.hits + " thr=" + res.thr + " bgRed=" + res.bgRed + " mean=" + res.mean.toFixed(1));
+                        toast("还没识别到红线：请确认框选区域套住了最上端那一段红色");
                     }
+                    setPhase("search", searchTicks >= 15 ? "（未找到红色）" : "");
 
                 } else if (r.action === "bite") {
                     dlog("判定咬钩 score=" + r.score.toFixed(1) + " ratio=" + r.ratio.toFixed(2) + " base=" + r.base.toFixed(1));
-                    updateStatus("收杆中...", "alert", "onAlert");
+                    setPhase("reel");
 
                     doClickKey(fx, fy, "fishSrc");
 
+                    setPhase("gap");
                     var waitDelay = storage.get("fishDelay", 10000);
                     if (!sleepAlive(waitDelay)) break;
 
+                    setPhase("cast");
                     doClickKey(fx, fy, "fishSrc");
                     if (!sleepAlive(1000)) break;
                     doClickKey(mx, my, "magSrc");
                     if (!sleepAlive(1000)) break;
 
+                    setPhase("search");
                     state = "WAIT_LINE";
                     lineSince = Date.now();
                     det.buf = []; det.markKind = ""; det.markMs = 0;
-                    updateStatus("等待刷新", "solid", "onSolid");
 
                 } else if (r.action === "line_back") {
                     dlog("红线回归 score=" + r.score.toFixed(1) + " ratio=" + r.ratio.toFixed(2));
                     state = "WAIT_BITE";
                     recastTries = 0;
-                    detectorStartCal(det, Date.now(), det.opts.calMsShort);
-                    updateStatus("标定中...", "solid", "onSolid");
+                    searchTicks = 0;
+                    detectorReset(det);
+                    setPhase("search");
 
                 } else if (state === "WAIT_LINE" && now - lineSince > CONFIG.waitLineMs) {
                     recastTries++;
@@ -1631,24 +1643,30 @@ function launchFloatAndLoop(fx, fy, mx, my, region) {
                             ui.run(function(){ floatWin.txtStatus.setText("红线未出现"); });
                         }
                     } else {
-                        updateStatus("未出现红线，重抛...", "warning", "onWarning");
+                        setPhase("cast");
                         doClickKey(fx, fy, "fishSrc");
+                        if (!sleepAlive(1000)) break;
+                        doClickKey(mx, my, "magSrc");
+                        if (!sleepAlive(1000)) break;
                         lineSince = Date.now();
+                        detectorReset(det);
+                        searchTicks = 0;
+                        setPhase("search");
                     }
                 }
 
-                if (now - lastFlush > 3000) {
+                if (debugOnNow && now - lastFlush > 500) {
                     lastFlush = now;
                     dlog("state=" + state + " stage=" + det.stage + " raw=" + score.toFixed(1) + " med=" + det.lastScore.toFixed(1) +
                          " base=" + det.base.toFixed(1) + " ratio=" + (det.base > 0 ? (det.lastScore / det.base).toFixed(2) : "-") +
-                         " hits=" + res.hits + " coh=" + res.coherence.toFixed(2) + " span=" + res.rowSpan + "/" + res.rh +
-                         " mean=" + res.mean.toFixed(1));
+                         " hits=" + res.hits + " thr=" + res.thr + " bgRed=" + res.bgRed +
+                         " mean=" + res.mean.toFixed(1) + " ov=" + (ov * 100).toFixed(0) + "%");
                     flushLog();
                 }
             } catch (e) {
                 dlog("ERR " + e);
             }
-            sleep(det.markKind === "gone" ? CONFIG.pollFastMs : CONFIG.pollMs);
+            sleep((det.markKind === "gone" || det.fastPending) ? CONFIG.pollFastMs : CONFIG.pollMs);
         }
         flushLog();
     });
